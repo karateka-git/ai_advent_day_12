@@ -1,0 +1,6 @@
+# Настройки Timeweb
+AGENT_ID=your-agent-id
+TIMEWEB_USER_TOKEN=your-timeweb-user-token
+
+# Настройки Hugging Face
+HF_API_TOKEN=your-hugging-face-token
