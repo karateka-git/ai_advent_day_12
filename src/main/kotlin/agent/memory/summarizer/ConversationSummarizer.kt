@@ -2,12 +2,12 @@ package agent.memory.summarizer
 
 import llm.core.model.ChatMessage
 
+/**
+ * Создаёт компактное текстовое summary для фрагмента диалога.
+ */
 interface ConversationSummarizer {
     /**
-     * Создаёт краткое резюме для набора сообщений диалога.
-     *
-     * @param messages сообщения, которые нужно сжать в summary
-     * @return текст summary, пригодный для последующей подстановки в контекст
+     * Сжимает переданные сообщения в один текст summary.
      */
     fun summarize(messages: List<ChatMessage>): String
 }

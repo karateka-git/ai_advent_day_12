@@ -17,6 +17,12 @@ import llm.core.LanguageModel
 import llm.core.model.ChatMessage
 import llm.core.model.ChatRole
 
+/**
+ * Базовый in-memory менеджер диалога, используемый агентом.
+ *
+ * Хранит текущее состояние памяти, делегирует подготовку prompt в [MemoryStrategy], сохраняет
+ * состояние на диск и сообщает статистику сжатия через [AgentLifecycleListener].
+ */
 class DefaultMemoryManager(
     private val languageModel: LanguageModel,
     private val systemPrompt: String,
@@ -82,6 +88,9 @@ class DefaultMemoryManager(
         saveState()
     }
 
+    /**
+     * Загружает сохранённое состояние памяти с диска или создаёт новое с системным сообщением.
+     */
     private fun loadMemoryState(): MemoryState {
         val savedState = conversationStore.loadState().toMemoryState()
         if (savedState.messages.isNotEmpty()) {
@@ -104,6 +113,9 @@ class DefaultMemoryManager(
         saveState(memoryState)
     }
 
+    /**
+     * Сохраняет текущее состояние памяти, синхронизируя идентификатор активной стратегии.
+     */
     private fun saveState(state: MemoryState) {
         memoryState = state.copy(
             metadata = state.metadata.copy(strategyId = memoryStrategy.id)
@@ -111,15 +123,24 @@ class DefaultMemoryManager(
         conversationStore.saveState(memoryState.toStoredState())
     }
 
+    /**
+     * Формирует базовое системное сообщение для нового или очищенного диалога.
+     */
     private fun createSystemMessage(): ChatMessage =
         ChatMessage(
             role = ChatRole.SYSTEM,
             content = systemPrompt
         )
 
+    /**
+     * Возвращает эффективный контекст для текущего состояния согласно активной стратегии.
+     */
     private fun effectiveConversation(): List<ChatMessage> =
         memoryStrategy.effectiveContext(memoryState)
 
+    /**
+     * Строит предварительный эффективный контекст для гипотетического следующего сообщения.
+     */
     private fun effectiveConversationWithUserPrompt(userPrompt: String): List<ChatMessage> =
         memoryStrategy.effectiveContext(
             refreshState(
@@ -130,6 +151,10 @@ class DefaultMemoryManager(
             )
         )
 
+    /**
+     * Применяет стратегию памяти к переданному состоянию и при необходимости сообщает статистику
+     * сжатия.
+     */
     private fun refreshState(
         state: MemoryState,
         notifyCompression: Boolean
@@ -150,9 +175,15 @@ class DefaultMemoryManager(
         return refreshedState
     }
 
+    /**
+     * Определяет, сжал ли последний проход дополнительные сообщения.
+     */
     private fun compressionApplied(previousState: MemoryState, refreshedState: MemoryState): Boolean =
         refreshedState.metadata.compressedMessagesCount > previousState.metadata.compressedMessagesCount
 
+    /**
+     * Преобразует сохранённую JSON-модель в runtime-модель памяти.
+     */
     private fun ConversationMemoryState.toMemoryState(): MemoryState =
         MemoryState(
             messages = messages.map(conversationMapper::fromStoredMessage),
@@ -168,6 +199,9 @@ class DefaultMemoryManager(
             )
         )
 
+    /**
+     * Преобразует runtime-модель памяти в сохраняемое JSON-представление.
+     */
     private fun MemoryState.toStoredState(): ConversationMemoryState =
         ConversationMemoryState(
             messages = messages.map(conversationMapper::toStoredMessage),

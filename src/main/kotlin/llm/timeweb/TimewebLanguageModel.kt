@@ -8,9 +8,9 @@ import java.nio.charset.StandardCharsets
 import kotlinx.serialization.json.Json
 import llm.core.LanguageModel
 import llm.core.model.ChatMessage
-import llm.core.tokenizer.TokenCounter
 import llm.core.model.LanguageModelInfo
 import llm.core.model.LanguageModelResponse
+import llm.core.tokenizer.TokenCounter
 import llm.timeweb.mapper.ChatCompletionResponseMapper
 import llm.timeweb.model.ChatCompletionRequest
 import llm.timeweb.model.ChatCompletionResponse
@@ -21,6 +21,9 @@ private const val TEMPERATURE = 0.7
 private const val API_URL_TEMPLATE =
     "https://agent.timeweb.cloud/api/v1/cloud-ai/agents/%s/v1/chat/completions"
 
+/**
+ * Реализация [LanguageModel] для Timeweb.
+ */
 class TimewebLanguageModel(
     private val httpClient: HttpClient,
     private val agentId: String,

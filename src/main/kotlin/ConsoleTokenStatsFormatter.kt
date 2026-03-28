@@ -1,5 +1,8 @@
 import agent.core.AgentTokenStats
 
+/**
+ * Форматирует статистику токенов в удобный для чтения консольный вывод.
+ */
 class ConsoleTokenStatsFormatter {
     fun formatPreview(tokenStats: AgentTokenStats): String? {
         val lines = buildList {

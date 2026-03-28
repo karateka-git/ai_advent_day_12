@@ -6,6 +6,10 @@ import agent.memory.summarizer.ConversationSummarizer
 import llm.core.model.ChatMessage
 import llm.core.model.ChatRole
 
+/**
+ * Стратегия памяти, которая заменяет старые фрагменты диалога на rolling summary и при этом
+ * сохраняет последние сообщения в исходном виде.
+ */
 class SummaryCompressionMemoryStrategy(
     private val recentMessagesCount: Int,
     private val summaryBatchSize: Int,
@@ -62,6 +66,9 @@ class SummaryCompressionMemoryStrategy(
         }
     }
 
+    /**
+     * Объединяет текущее rolling summary со следующей порцией старых несжатых сообщений.
+     */
     private fun buildUpdatedSummary(
         existingSummary: ConversationSummary?,
         nextBatch: List<ChatMessage>
@@ -81,6 +88,9 @@ class SummaryCompressionMemoryStrategy(
         return summarizer.summarize(messagesForSummary)
     }
 
+    /**
+     * Оборачивает сохранённый текст summary в системное сообщение для effective prompt.
+     */
     private fun toSummaryMessage(summary: ConversationSummary): List<ChatMessage> =
         listOf(
             ChatMessage(
@@ -89,6 +99,9 @@ class SummaryCompressionMemoryStrategy(
             )
         )
 
+    /**
+     * Безопасно отбрасывает хвост нужной длины, даже если список короче указанного количества.
+     */
     private fun <T> List<T>.dropLastSafe(count: Int): List<T> =
         if (count >= size) {
             emptyList()

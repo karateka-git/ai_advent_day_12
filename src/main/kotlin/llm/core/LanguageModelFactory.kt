@@ -2,14 +2,20 @@ package llm.core
 
 import java.net.http.HttpClient
 import java.util.Properties
-import llm.huggingface.HuggingFaceLanguageModel
 import llm.core.model.LanguageModelOption
+import llm.huggingface.HuggingFaceLanguageModel
 import llm.timeweb.TimewebLanguageModel
 
 private const val TIMEWEB_ID = "timeweb"
 private const val HUGGING_FACE_ID = "huggingface"
 
+/**
+ * Создаёт конкретные реализации языковых моделей на основе конфигурации и выбора в CLI.
+ */
 object LanguageModelFactory {
+    /**
+     * Возвращает первую настроенную языковую модель из списка доступных провайдеров.
+     */
     fun createDefault(config: Properties, httpClient: HttpClient): LanguageModel =
         create(
             modelId = availableModels(config).firstOrNull { it.isConfigured }?.id
@@ -18,6 +24,9 @@ object LanguageModelFactory {
             httpClient = httpClient
         )
 
+    /**
+     * Создаёт реализацию конкретного провайдера по его идентификатору.
+     */
     fun create(modelId: String, config: Properties, httpClient: HttpClient): LanguageModel {
         return when (modelId.lowercase()) {
             TIMEWEB_ID -> TimewebLanguageModel(
@@ -38,6 +47,9 @@ object LanguageModelFactory {
         }
     }
 
+    /**
+     * Возвращает все поддерживаемые провайдеры вместе с их статусом конфигурации.
+     */
     fun availableModels(config: Properties): List<LanguageModelOption> = listOf(
         LanguageModelOption(
             id = TIMEWEB_ID,
@@ -54,9 +66,15 @@ object LanguageModelFactory {
     )
 }
 
+/**
+ * Читает обязательное непустое свойство из конфигурации приложения.
+ */
 private fun Properties.getRequired(key: String): String =
     getProperty(key)?.takeIf { it.isNotBlank() }
         ?: throw IllegalArgumentException("В config/app.properties отсутствует обязательное свойство '$key'.")
 
+/**
+ * Проверяет, что свойство присутствует и не пустое.
+ */
 private fun Properties.hasValue(key: String): Boolean =
     !getProperty(key).isNullOrBlank()

@@ -27,6 +27,12 @@ private val systemConsole = System.console()
 private val tokenStatsFormatter = ConsoleTokenStatsFormatter()
 private val loadingIndicator = LoadingIndicator()
 
+/**
+ * Точка входа CLI-приложения.
+ *
+ * Приложение загружает конфигурацию, выбирает LLM-провайдер, предлагает пользователю выбрать
+ * стратегию памяти и затем запускает интерактивный цикл чата.
+ */
 fun main() {
     val config = loadConfig()
     val httpClient = HttpClient.newHttpClient()
@@ -37,7 +43,7 @@ fun main() {
     )
     warmUpTokenCounter(languageModel, lifecycleListener)
 
-    var selectedMemoryStrategyOption = selectMemoryStrategyOption()
+    val selectedMemoryStrategyOption = selectMemoryStrategyOption()
     var agent: Agent<String> = createAgent(
         languageModel = languageModel,
         lifecycleListener = lifecycleListener,
@@ -124,6 +130,9 @@ fun main() {
     }
 }
 
+/**
+ * Создаёт новый экземпляр агента для выбранной модели и стратегии памяти.
+ */
 private fun createAgent(
     languageModel: LanguageModel,
     lifecycleListener: AgentLifecycleListener,
@@ -139,6 +148,9 @@ private fun createAgent(
         )
     )
 
+/**
+ * Предлагает пользователю выбрать одну из доступных стратегий памяти перед стартом чата.
+ */
 private fun selectMemoryStrategyOption(): MemoryStrategyOption {
     val options = MemoryStrategyFactory.availableOptions()
 
@@ -162,6 +174,9 @@ private fun selectMemoryStrategyOption(): MemoryStrategyOption {
     }
 }
 
+/**
+ * Выводит текущую конфигурацию модели и памяти для активной сессии.
+ */
 private fun printCurrentAgentInfo(agent: Agent<String>, strategy: MemoryStrategyOption) {
     println("Агент: ${agent.info.name}")
     println("Описание: ${agent.info.description}")
@@ -169,6 +184,9 @@ private fun printCurrentAgentInfo(agent: Agent<String>, strategy: MemoryStrategy
     println("Стратегия памяти: ${strategy.displayName}")
 }
 
+/**
+ * Форматирует список доступных языковых моделей и помечает активную.
+ */
 private fun formatModels(config: Properties, currentModel: LanguageModel): String =
     buildString {
         appendLine("Доступные модели:")
@@ -186,6 +204,9 @@ private fun formatModels(config: Properties, currentModel: LanguageModel): Strin
         }
     }.trimEnd()
 
+/**
+ * Преобразует экземпляр модели времени выполнения обратно в идентификатор, используемый в CLI.
+ */
 private fun currentModelId(languageModel: LanguageModel): String =
     when (languageModel.info.name) {
         "TimewebLanguageModel" -> "timeweb"
@@ -193,6 +214,10 @@ private fun currentModelId(languageModel: LanguageModel): String =
         else -> languageModel.info.name.lowercase()
     }
 
+/**
+ * Принудительно прогревает лениво создаваемый токенизатор перед стартом чата, чтобы первая
+ * оценка токенов не была слишком долгой.
+ */
 private fun warmUpTokenCounter(
     languageModel: LanguageModel,
     lifecycleListener: AgentLifecycleListener
@@ -205,6 +230,9 @@ private fun warmUpTokenCounter(
     }
 }
 
+/**
+ * Определяет кодировку, используемую текущей консольной сессией.
+ */
 private fun detectConsoleCharset(): Charset {
     val nativeEncoding = System.getProperty("native.encoding")
     return if (nativeEncoding.isNullOrBlank()) {
@@ -214,8 +242,14 @@ private fun detectConsoleCharset(): Charset {
     }
 }
 
+/**
+ * Читает одну строку из консоли, предпочитая нативный API консоли, если он доступен.
+ */
 private fun readConsoleLine(): String? = systemConsole?.readLine() ?: consoleReader.readLine()
 
+/**
+ * Загружает свойства приложения из локального файла конфигурации.
+ */
 private fun loadConfig(): Properties {
     val configPath = Path.of(CONFIG_FILE)
     require(Files.exists(configPath)) {

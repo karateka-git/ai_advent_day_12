@@ -1,5 +1,8 @@
 package agent.lifecycle
 
+/**
+ * Отображает события жизненного цикла в консоли через общий индикатор загрузки.
+ */
 class ConsoleAgentLifecycleListener(
     private val loadingIndicator: LoadingIndicator
 ) : AgentLifecycleListener {

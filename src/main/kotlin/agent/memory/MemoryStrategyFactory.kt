@@ -4,10 +4,16 @@ import agent.lifecycle.AgentLifecycleListener
 import agent.memory.summarizer.LlmConversationSummarizer
 import llm.core.LanguageModel
 
+/**
+ * Создаёт стратегии памяти, которые можно выбрать в рамках CLI-сессии.
+ */
 object MemoryStrategyFactory {
     private const val DEFAULT_RECENT_MESSAGES_COUNT = 2
     private const val DEFAULT_SUMMARY_BATCH_SIZE = 3
 
+    /**
+     * Возвращает список стратегий, доступных пользователю перед стартом чата.
+     */
     fun availableOptions(): List<MemoryStrategyOption> =
         listOf(
             MemoryStrategyOption(
@@ -22,6 +28,9 @@ object MemoryStrategyFactory {
             )
         )
 
+    /**
+     * Создаёт экземпляр стратегии для выбранной опции.
+     */
     fun create(
         strategyId: String,
         languageModel: LanguageModel,
@@ -39,6 +48,9 @@ object MemoryStrategyFactory {
         }
 }
 
+/**
+ * Пользовательское описание стратегии памяти, доступной для выбора.
+ */
 data class MemoryStrategyOption(
     val id: String,
     val displayName: String,

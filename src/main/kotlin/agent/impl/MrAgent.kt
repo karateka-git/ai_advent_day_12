@@ -16,6 +16,12 @@ import agent.memory.summarizer.LlmConversationSummarizer
 import java.nio.file.Path
 import llm.core.LanguageModel
 
+/**
+ * Базовая реализация CLI-агента.
+ *
+ * Делегирует управление памятью в [MemoryManager], отправляет эффективный контекст в активную
+ * [LanguageModel] и возвращает текстовые ответы для отображения в консоли.
+ */
 class MrAgent(
     private val languageModel: LanguageModel,
     private val systemPrompt: String = DEFAULT_SYSTEM_PROMPT,
@@ -72,6 +78,9 @@ class MrAgent(
     }
 
     companion object {
+        /**
+         * Собирает финальный системный prompt агента, добавляя инструкции по формату ответа.
+         */
         private fun buildSystemPrompt(systemPrompt: String, responseFormatInstruction: String): String =
             "$systemPrompt\n\nТребования к формату ответа:\n$responseFormatInstruction"
 

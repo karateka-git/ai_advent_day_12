@@ -8,9 +8,9 @@ import java.nio.charset.StandardCharsets
 import kotlinx.serialization.json.Json
 import llm.core.LanguageModel
 import llm.core.model.ChatMessage
-import llm.core.tokenizer.TokenCounter
 import llm.core.model.LanguageModelInfo
 import llm.core.model.LanguageModelResponse
+import llm.core.tokenizer.TokenCounter
 import llm.huggingface.mapper.HuggingFaceChatCompletionResponseMapper
 import llm.huggingface.model.HuggingFaceChatCompletionRequest
 import llm.huggingface.model.HuggingFaceChatCompletionResponse
@@ -21,6 +21,9 @@ private const val PROVIDER = "featherless-ai"
 private const val API_BASE_URL = "https://router.huggingface.co/v1"
 private const val TEMPERATURE = 0.7
 
+/**
+ * Реализация [LanguageModel] для Hugging Face.
+ */
 class HuggingFaceLanguageModel(
     private val httpClient: HttpClient,
     private val userToken: String

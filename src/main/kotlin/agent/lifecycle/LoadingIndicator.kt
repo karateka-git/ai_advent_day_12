@@ -3,17 +3,26 @@ package agent.lifecycle
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
 
+/**
+ * Общий консольный спиннер с поддержкой вложенных статусных сообщений.
+ */
 class LoadingIndicator {
     private val running = AtomicBoolean(false)
     private val messages = ArrayDeque<String>()
     private var thread: Thread? = null
 
+    /**
+     * Добавляет новое статусное сообщение в стек индикатора.
+     */
     @Synchronized
     fun start(message: String) {
         messages.addLast(message)
         ensureThreadStarted()
     }
 
+    /**
+     * Удаляет последнее статусное сообщение и останавливает спиннер, когда стек становится пустым.
+     */
     @Synchronized
     fun stop() {
         if (messages.isNotEmpty()) {

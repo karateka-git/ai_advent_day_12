@@ -5,15 +5,22 @@ import llm.core.model.LanguageModelInfo
 import llm.core.model.LanguageModelResponse
 import llm.core.tokenizer.TokenCounter
 
+/**
+ * Общая абстракция над конкретными LLM-провайдерами.
+ */
 interface LanguageModel {
+    /**
+     * Статические метаданные провайдера и модели, отображаемые в приложении.
+     */
     val info: LanguageModelInfo
+
+    /**
+     * Необязательный локальный счётчик токенов для оценки prompt.
+     */
     val tokenCounter: TokenCounter?
 
     /**
-     * Выполняет запрос к языковой модели по переданному набору сообщений.
-     *
-     * @param messages сообщения, формирующие контекст запроса
-     * @return ответ модели, включая текст и доступную статистику использования токенов
+     * Отправляет переданные сообщения prompt в модель и возвращает сырой ответ провайдера.
      */
     fun complete(messages: List<ChatMessage>): LanguageModelResponse
 }

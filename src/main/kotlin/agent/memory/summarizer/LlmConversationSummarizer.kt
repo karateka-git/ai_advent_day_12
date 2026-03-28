@@ -4,6 +4,9 @@ import llm.core.LanguageModel
 import llm.core.model.ChatMessage
 import llm.core.model.ChatRole
 
+/**
+ * Строит summary диалога, отправляя отдельный запрос на суммаризацию в активную LLM.
+ */
 class LlmConversationSummarizer(
     private val languageModel: LanguageModel
 ) : ConversationSummarizer {
@@ -28,6 +31,9 @@ class LlmConversationSummarizer(
         return response.content.trim()
     }
 
+    /**
+     * Преобразует фрагмент диалога в пользовательское сообщение для summarization prompt.
+     */
     private fun buildSummaryInput(messages: List<ChatMessage>): String =
         buildString {
             appendLine("Сожми следующий фрагмент диалога:")

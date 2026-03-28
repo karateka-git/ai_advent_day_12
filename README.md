@@ -1,70 +1,22 @@
 # ai_advent_day_9
 
-Простой CLI-агент для работы с LLM по HTTP API.
+CLI-агент для диалога с LLM по HTTP API с поддержкой хранения истории, выбора стратегии памяти и сжатия старого контекста через summary.
 
 ## Что умеет проект
 
-- принимает запрос пользователя из консоли;
-- отправляет запрос в LLM через HTTP API;
-- получает ответ и выводит его в CLI;
-- инкапсулирует логику работы с моделью в отдельном агенте `MrAgent`;
-- сохраняет историю диалога в JSON и восстанавливает её после перезапуска;
-- работает с языковой моделью через общий интерфейс `LanguageModel`.
+- запускать интерактивный чат в консоли;
+- переключать LLM-провайдер между `timeweb` и `huggingface`;
+- сохранять историю диалога по моделям в JSON;
+- выбирать стратегию памяти перед стартом чата;
+- работать без сжатия истории или со сжатием через rolling summary;
+- считать локальную оценку токенов до запроса;
+- показывать экономию токенов после сжатия контекста.
 
-## Архитектура
-
-В проекте есть общий контракт агента и отдельный слой языковой модели:
-
-- `Agent<T>` — общий интерфейс агента;
-- `ResponseFormat<T>` — описание ожидаемого формата ответа;
-- `TextResponseFormat` — текстовый формат ответа;
-- `MrAgent` — агент, который реализует `Agent<String>`;
-- `LanguageModel` — общий интерфейс для разных LLM;
-- `TimewebLanguageModel` — текущая реализация языковой модели для Timeweb API;
-- `HuggingFaceLanguageModel` — реализация языковой модели для Hugging Face Inference API c моделью `Qwen/Qwen2.5-1.5B-Instruct`;
-- `ConversationStore` — общий контракт хранения истории диалога;
-- `JsonConversationStore` — JSON-реализация хранения контекста;
-- `ConversationMapper` — прослойка между хранилищем и рабочими сообщениями агента;
-- `ChatMessageConversationMapper` — маппер между `StoredMessage` и `ChatMessage`;
-- `Main.kt` — CLI-обвязка, которая читает ввод пользователя, создаёт языковую модель и вызывает агента.
-
-## Структура папок
-
-- `src/main/kotlin/agent/core` — базовые контракты агента;
-- `src/main/kotlin/agent/format` — форматы ответа агента;
-- `src/main/kotlin/agent/impl` — реализации агентов;
-- `src/main/kotlin/agent/storage` — хранение контекста;
-- `src/main/kotlin/agent/storage/mapper` — мапперы между storage-моделями и сообщениями агента;
-- `src/main/kotlin/agent/storage/model` — модели для хранения истории;
-- `src/main/kotlin/llm/core` — общие контракты и модели языковой модели;
-- `src/main/kotlin/llm/huggingface` — реализация `HuggingFaceLanguageModel`;
-- `src/main/kotlin/llm/timeweb` — реализация `TimewebLanguageModel`;
-- `src/main/kotlin/llm/timeweb/model` — DTO для Timeweb API;
-- `src/test/kotlin` — тесты.
-
-## Настройка
+## Быстрый старт
 
 1. Скопируйте `config/app.properties.example` в `config/app.properties`.
-2. Для `timeweb` заполните `AGENT_ID` и `TIMEWEB_USER_TOKEN`.
-3. Для `huggingface` заполните `HF_API_TOKEN`.
-
-### Провайдеры
-
-- по умолчанию приложение выбирает первую доступную модель;
-- список доступных моделей можно посмотреть командой `models`;
-- переключить текущую модель можно командой `use <id>`;
-- сейчас доступны `timeweb` и `huggingface`;
-- параметры модели, провайдера и базового URL зашиты в коде реализации `HuggingFaceLanguageModel`.
-
-## Сборка
-
-```powershell
-.\gradlew.bat build
-```
-
-## Запуск
-
-Рекомендуемый запуск для Windows:
+2. Заполните токены для нужного провайдера.
+3. Соберите и запустите проект:
 
 ```powershell
 .\gradlew.bat build
@@ -72,29 +24,172 @@
 .\build\install\ai_advent_day_9\bin\ai_advent_day_9.bat
 ```
 
+## Конфигурация
+
+### Timeweb
+
+- `AGENT_ID`
+- `TIMEWEB_USER_TOKEN`
+
+### Hugging Face
+
+- `HF_API_TOKEN`
+
+Если токены заданы сразу для нескольких провайдеров, по умолчанию будет выбрана первая доступная модель из списка, который строит [LanguageModelFactory.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/llm/core/LanguageModelFactory.kt).
+
 ## Команды в чате
 
-- вводите сообщения в консоли, чтобы продолжить диалог;
-- введите `clear`, чтобы очистить контекст и начать новый диалог, сохранив системное сообщение;
-- введите `models`, чтобы посмотреть список доступных моделей;
-- введите `use <id>`, чтобы переключить текущую модель;
-- введите `load overflow_preset`, чтобы заменить историю текущей модели содержимым `config/conversations/context_overflow_preset.json`;
-- введите `exit` или `quit`, чтобы завершить работу.
+- `clear` — очищает контекст, оставляя системное сообщение.
+- `models` — показывает доступные модели и их статус.
+- `use <id>` — переключает текущую модель.
+- `exit` / `quit` — завершает приложение.
 
-## Токены
+## Стратегии памяти
 
-- перед отправкой запроса CLI показывает локальную оценку токенов для текущего сообщения, истории и полного запроса;
-- после ответа модели CLI показывает фактические токены ответа, полученные от API, если провайдер их возвращает.
+Перед стартом чата CLI предлагает выбрать одну из стратегий памяти:
 
-## Сохранение контекста
+- `Без сжатия`
+  Агент отправляет в модель всю сохранённую историю как есть.
+- `Сжатие через summary`
+  Старые сообщения сворачиваются в rolling summary, а последние сообщения остаются без изменений.
 
-- история диалога сохраняется в JSON-файл;
-- для каждой модели используется свой отдельный файл в `config/conversations/`;
-- в `config/conversations/context_overflow_preset.json` лежит пресет для тестирования переполнения окна контекста;
-- store работает со своими моделями `StoredMessage`;
-- агент работает с `ChatMessage`;
-- переход между ними выполняется через mapper-слой.
+Создание стратегий централизовано в [MemoryStrategyFactory.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/agent/memory/MemoryStrategyFactory.kt).
+
+## Пользовательский сценарий
+
+Ниже показано, как пользовательское действие проходит через основные части системы.
+
+```mermaid
+sequenceDiagram
+    participant U as "User"
+    participant M as "Main.kt"
+    participant A as "MrAgent"
+    participant MM as "DefaultMemoryManager"
+    participant MS as "MemoryStrategy"
+    participant LM as "LanguageModel"
+    participant S as "JsonConversationStore"
+
+    U->>M: "Запуск приложения"
+    M->>LM: createDefault(...)
+    M->>U: "Выберите стратегию памяти"
+    U->>M: "summary_compression"
+    M->>A: createAgent(...)
+
+    U->>M: "Текст запроса"
+    M->>A: previewTokenStats(prompt)
+    A->>MM: previewTokenStats(prompt)
+    MM->>MS: effectiveContext(...)
+    M->>A: ask(prompt)
+    A->>MM: appendUserMessage(prompt)
+    MM->>MS: refreshState(...)
+    MM->>S: saveState(...)
+    A->>LM: complete(effectiveContext)
+    LM-->>A: model response
+    A->>MM: appendAssistantMessage(response)
+    MM->>S: saveState(...)
+    A-->>M: AgentResponse
+    M-->>U: "Ответ + статистика токенов"
+```
+
+## Как используются программные части
+
+### Точка входа
+
+- [Main.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/Main.kt)
+  Управляет CLI-циклом, выбором модели, выбором стратегии памяти и отображением статусов пользователю.
+
+### Агент
+
+- [MrAgent.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/agent/impl/MrAgent.kt)
+  Оркестратор одного хода диалога. Получает prompt, просит memory manager подготовить контекст, отправляет запрос в LLM и сохраняет ответ.
+
+### Память и сжатие
+
+- [DefaultMemoryManager.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/agent/memory/DefaultMemoryManager.kt)
+  Хранит текущее состояние памяти, сохраняет его в storage и считает токены до и после компрессии.
+- [MemoryStrategy.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/agent/memory/MemoryStrategy.kt)
+  Контракт, определяющий, как формируется effective context.
+- [NoCompressionMemoryStrategy.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/agent/memory/NoCompressionMemoryStrategy.kt)
+  Отдаёт всю историю без изменений.
+- [SummaryCompressionMemoryStrategy.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/agent/memory/SummaryCompressionMemoryStrategy.kt)
+  Сворачивает старые сообщения в rolling summary.
+- [LlmConversationSummarizer.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/agent/memory/summarizer/LlmConversationSummarizer.kt)
+  Использует LLM для построения summary старой части диалога.
+
+### Lifecycle и CLI-статусы
+
+- [AgentLifecycleListener.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/agent/lifecycle/AgentLifecycleListener.kt)
+  Контракт для событий прогрева модели и сжатия контекста.
+- [ConsoleAgentLifecycleListener.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/agent/lifecycle/ConsoleAgentLifecycleListener.kt)
+  Показывает загрузочные статусы и выводит экономию токенов после сжатия.
+- [LoadingIndicator.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/agent/lifecycle/LoadingIndicator.kt)
+  Общий индикатор загрузки с поддержкой вложенных статусов.
+
+### Хранилище
+
+- [JsonConversationStore.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/agent/storage/JsonConversationStore.kt)
+  Читает и записывает состояние памяти в `config/conversations/`.
+- [ConversationMemoryState.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/agent/storage/model/ConversationMemoryState.kt)
+  JSON-модель состояния памяти на диске.
+
+### LLM-провайдеры
+
+- [LanguageModelFactory.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/llm/core/LanguageModelFactory.kt)
+  Создаёт провайдера по id и конфигу.
+- [TimewebLanguageModel.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/llm/timeweb/TimewebLanguageModel.kt)
+  Реализация для Timeweb.
+- [HuggingFaceLanguageModel.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/llm/huggingface/HuggingFaceLanguageModel.kt)
+  Реализация для Hugging Face.
+
+### Токены
+
+- [TokenCounter.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/llm/core/tokenizer/TokenCounter.kt)
+  Общий контракт локального подсчёта токенов.
+- [ConsoleTokenStatsFormatter.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/ConsoleTokenStatsFormatter.kt)
+  Форматирует предпросмотр и фактическую статистику токенов для CLI.
+
+## Как читать проект
+
+Если хочешь быстро понять поток управления, удобнее идти в таком порядке:
+
+1. [Main.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/Main.kt)
+2. [MrAgent.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/agent/impl/MrAgent.kt)
+3. [DefaultMemoryManager.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/agent/memory/DefaultMemoryManager.kt)
+4. [MemoryStrategyFactory.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/agent/memory/MemoryStrategyFactory.kt)
+5. [SummaryCompressionMemoryStrategy.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/agent/memory/SummaryCompressionMemoryStrategy.kt)
+6. [LlmConversationSummarizer.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/agent/memory/summarizer/LlmConversationSummarizer.kt)
+7. [JsonConversationStore.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/agent/storage/JsonConversationStore.kt)
+8. [LanguageModelFactory.kt](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_9/src/main/kotlin/llm/core/LanguageModelFactory.kt)
+
+## Токены и компрессия
+
+Во время работы CLI показывает:
+
+- оценку токенов перед запросом;
+- индикатор долгих операций;
+- сообщение о сжатии контекста;
+- итог после компрессии:
+  `Контекст сжат: X -> Y токенов, экономия Z`
+
+Это позволяет сравнивать режимы `Без сжатия` и `Сжатие через summary` на одном и том же пользовательском сценарии.
+
+## Тесты
+
+Запуск тестов:
+
+```powershell
+.\gradlew.bat test
+```
+
+Основные проверяемые области:
+
+- фабрика моделей;
+- storage и мапперы;
+- стратегии памяти;
+- summarizer;
+- форматирование токеновой статистики;
+- поведение memory manager при компрессии.
 
 ## IDE
 
-Для просмотра и навигации по коду удобнее всего открыть проект в `IntelliJ IDEA Community Edition`.
+Для навигации по коду и запуска тестов удобнее всего открыть проект в IntelliJ IDEA Community Edition.
