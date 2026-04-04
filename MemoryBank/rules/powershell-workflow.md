@@ -1,9 +1,9 @@
-# PowerShell Workflow
+﻿# PowerShell Workflow
 
 ## Команда для запуска проекта в новом окне
 
 ```powershell
-Start-Process powershell -ArgumentList '-NoExit','-Command','Set-Location ''C:\Users\compadre\Downloads\Projects\AiAdvent\day_10''; .\build\install\ai_advent_day_10\bin\ai_advent_day_10.bat'
+Start-Process powershell -ArgumentList '-NoExit','-Command','Set-Location ''C:\Users\compadre\Downloads\Projects\AiAdvent\day_11''; .\build\install\ai_advent_day_11\bin\ai_advent_day_11.bat'
 ```
 
 ## Что делает эта команда
@@ -12,11 +12,11 @@ Start-Process powershell -ArgumentList '-NoExit','-Command','Set-Location ''C:\U
 
 После открытия окна она:
 
-1. переходит в папку проекта `C:\Users\compadre\Downloads\Projects\AiAdvent\day_10`;
+1. переходит в папку проекта `C:\Users\compadre\Downloads\Projects\AiAdvent\day_11`;
 2. запускает собранный bat-файл проекта:
 
 ```powershell
-.\build\install\ai_advent_day_10\bin\ai_advent_day_10.bat
+.\build\install\ai_advent_day_11\bin\ai_advent_day_11.bat
 ```
 
 Ключ `-NoExit` оставляет окно PowerShell открытым после запуска, чтобы можно было работать с интерактивным приложением в этом окне.
@@ -40,7 +40,7 @@ Start-Process powershell -ArgumentList '-NoExit','-Command','Set-Location ''C:\U
 3. после этого открыть новое окно PowerShell и запустить проект командой:
 
 ```powershell
-Start-Process powershell -ArgumentList '-NoExit','-Command','Set-Location ''C:\Users\compadre\Downloads\Projects\AiAdvent\day_10''; .\build\install\ai_advent_day_10\bin\ai_advent_day_10.bat'
+Start-Process powershell -ArgumentList '-NoExit','-Command','Set-Location ''C:\Users\compadre\Downloads\Projects\AiAdvent\day_11''; .\build\install\ai_advent_day_11\bin\ai_advent_day_11.bat'
 ```
 
 То есть `собери проект` в этом репозитории означает:
@@ -59,7 +59,7 @@ Start-Process powershell -ArgumentList '-NoExit','-Command','Set-Location ''C:\U
 1. удалить runtime-файлы истории в `config/conversations/`
 2. `.\gradlew.bat build`
 3. `.\gradlew.bat installDist`
-4. `Start-Process ... ai_advent_day_10.bat`
+4. `Start-Process ... ai_advent_day_11.bat`
 
 ### Команда: `запусти проект`
 
@@ -72,7 +72,7 @@ Start-Process powershell -ArgumentList '-NoExit','-Command','Set-Location ''C:\U
 Нужно сразу выполнить:
 
 ```powershell
-Start-Process powershell -ArgumentList '-NoExit','-Command','Set-Location ''C:\Users\compadre\Downloads\Projects\AiAdvent\day_10''; .\build\install\ai_advent_day_10\bin\ai_advent_day_10.bat'
+Start-Process powershell -ArgumentList '-NoExit','-Command','Set-Location ''C:\Users\compadre\Downloads\Projects\AiAdvent\day_11''; .\build\install\ai_advent_day_11\bin\ai_advent_day_11.bat'
 ```
 
 То есть `запусти проект` в этом репозитории означает:
@@ -132,7 +132,7 @@ Start-Process powershell -ArgumentList '-NoExit','-Command','Set-Location ''C:\U
 Нужно сразу выполнить:
 
 ```powershell
-Start-Process powershell -ArgumentList '-NoExit','-Command','chcp 65001 > $null; [Console]::InputEncoding = [System.Text.Encoding]::UTF8; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; Set-Location ''C:\Users\compadre\Downloads\Projects\AiAdvent\day_10''; .\gradlew.bat compareStrategies'
+Start-Process powershell -ArgumentList '-NoExit','-Command','chcp 65001 > $null; [Console]::InputEncoding = [System.Text.Encoding]::UTF8; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; Set-Location ''C:\Users\compadre\Downloads\Projects\AiAdvent\day_11''; .\gradlew.bat compareStrategies'
 ```
 
 То есть `запусти сравнение` в этом репозитории означает:
@@ -151,7 +151,7 @@ Start-Process powershell -ArgumentList '-NoExit','-Command','chcp 65001 > $null;
 Если пользователь явно просит конкретное количество шагов, быстрый или полный прогон сравнения, нужно использовать параметр:
 
 ```powershell
-Start-Process powershell -ArgumentList '-NoExit','-Command','chcp 65001 > $null; [Console]::InputEncoding = [System.Text.Encoding]::UTF8; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; Set-Location ''C:\Users\compadre\Downloads\Projects\AiAdvent\day_10''; .\gradlew.bat compareStrategies -PcomparisonSteps=<N>'
+Start-Process powershell -ArgumentList '-NoExit','-Command','chcp 65001 > $null; [Console]::InputEncoding = [System.Text.Encoding]::UTF8; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; Set-Location ''C:\Users\compadre\Downloads\Projects\AiAdvent\day_11''; .\gradlew.bat compareStrategies -PcomparisonSteps=<N>'
 ```
 
 где `<N>` — число шагов сценария, которое пользователь попросил.
@@ -161,3 +161,4 @@ Start-Process powershell -ArgumentList '-NoExit','-Command','chcp 65001 > $null;
 - если пользователь пишет `запусти сравнение на 8 шагах` или аналогично, использовать `-PcomparisonSteps=8`;
 - если пользователь явно просит выключить judge, использовать `-PcomparisonJudge=false`;
 - если пользователь явно просит полный прогон, запускать без ограничения только после отдельного подтверждения, потому что это заметно дольше и дороже по токенам.
+

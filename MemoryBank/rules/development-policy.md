@@ -1,4 +1,4 @@
-# Development Policy
+﻿# Development Policy
 
 ## Совместимость со старыми версиями
 
@@ -21,7 +21,7 @@
 ## Smoke-Check Проекта
 
 Для ручной проверки основной пользовательской функциональности проекта нужно использовать проектный сценарий:
-- [manual-smoke-checklist.md](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_10/docs/manual-smoke-checklist.md)
+- [manual-smoke-checklist.md](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_11/docs/manual-smoke-checklist.md)
 
 Правило для Codex:
 - если пользователь просит `проверить проект`, `прогнать основной сценарий`, `сделать smoke-check` или формулирует близкую просьбу без дополнительного уточнения, по умолчанию ориентироваться на этот чеклист;
@@ -32,3 +32,4 @@
 - для scripted-прогона удобно повторно вызывать `use timeweb`, чтобы заново выбрать стратегию и не зависеть от другого провайдера;
 - при захвате вывода `.bat` через scripted stdin в текущей консоли кириллица может отображаться кракозябрами; в таком случае ориентироваться не на текстовый захват, а на фактическое поведение команд и проверку JSON;
 - при проверке persisted state помнить ожидаемое поведение: `no_compression` и `sliding_window` не обязаны сохранять `strategyState`, а `summary`, `sticky_facts` и `branching` должны сохранять свой типизированный `strategyState`.
+

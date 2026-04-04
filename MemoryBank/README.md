@@ -1,6 +1,6 @@
-# MemoryBank
+﻿# MemoryBank
 
-Локальный банк памяти для правил и договорённостей, которые относятся именно к проекту `ai_advent_day_10`.
+Локальный банк памяти для правил и договорённостей, которые относятся именно к проекту `ai_advent_day_11`.
 
 ## Структура
 
@@ -9,5 +9,6 @@
 
 ## Связанные проектные артефакты
 
-- основной ручной smoke-check сценарий лежит в [docs/manual-smoke-checklist.md](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_10/docs/manual-smoke-checklist.md)
+- основной ручной smoke-check сценарий лежит в [docs/manual-smoke-checklist.md](/C:/Users/compadre/Downloads/Projects/AiAdvent/day_11/docs/manual-smoke-checklist.md)
 - `MemoryBank` только ссылается на этот сценарий и задаёт правило, когда его использовать
+

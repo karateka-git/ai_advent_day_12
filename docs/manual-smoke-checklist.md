@@ -1,6 +1,6 @@
-# Manual Smoke Checklist
+﻿# Manual Smoke Checklist
 
-Ручной smoke-check проекта `ai_advent_day_10` без comparison runner.
+Ручной smoke-check проекта `ai_advent_day_11` без comparison runner.
 
 Цель:
 - быстро проверить, что основное приложение запускается;
@@ -21,7 +21,7 @@
 ```powershell
 .\gradlew.bat build
 .\gradlew.bat installDist
-.\build\install\ai_advent_day_10\bin\ai_advent_day_10.bat
+.\build\install\ai_advent_day_11\bin\ai_advent_day_11.bat
 ```
 
 3. После каждого сценария при необходимости смотреть JSON в:
@@ -273,3 +273,4 @@ Smoke-check считается успешным, если:
 - все 5 стратегий проходят свои сценарии без ошибок;
 - persisted JSON соответствует ожидаемой структуре;
 - ветки диалога действительно независимы.
+
