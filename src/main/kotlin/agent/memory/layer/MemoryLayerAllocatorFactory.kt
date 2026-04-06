@@ -22,6 +22,7 @@ object MemoryLayerAllocatorFactory {
      */
     fun create(config: Properties, httpClient: HttpClient): MemoryLayerAllocator {
         val hfToken = config.getProperty("HF_API_TOKEN")?.takeIf { it.isNotBlank() }
+        val traceLogger = LlmMemoryLayerAllocatorTraceLogger()
         return if (hfToken != null) {
             FallbackMemoryLayerAllocator(
                 primary = LlmMemoryLayerAllocator(
@@ -29,10 +30,13 @@ object MemoryLayerAllocatorFactory {
                         languageModel = HuggingFaceLanguageModel(
                             httpClient = httpClient,
                             userToken = hfToken
-                        )
-                    )
+                        ),
+                        traceLogger = traceLogger
+                    ),
+                    traceLogger = traceLogger
                 ),
-                fallback = RuleBasedMemoryLayerAllocator()
+                fallback = RuleBasedMemoryLayerAllocator(),
+                traceLogger = traceLogger
             )
         } else {
             RuleBasedMemoryLayerAllocator()
@@ -45,9 +49,13 @@ object MemoryLayerAllocatorFactory {
  */
 class FallbackMemoryLayerAllocator(
     private val primary: MemoryLayerAllocator,
-    private val fallback: MemoryLayerAllocator
+    private val fallback: MemoryLayerAllocator,
+    private val traceLogger: LlmMemoryLayerAllocatorTraceLogger? = null
 ) : MemoryLayerAllocator {
     override fun extractCandidates(state: MemoryState, message: ChatMessage): List<MemoryCandidateDraft> =
         runCatching { primary.extractCandidates(state, message) }
-            .getOrElse { fallback.extractCandidates(state, message) }
+            .getOrElse { error ->
+                traceLogger?.logFallback(error)
+                fallback.extractCandidates(state, message)
+            }
 }

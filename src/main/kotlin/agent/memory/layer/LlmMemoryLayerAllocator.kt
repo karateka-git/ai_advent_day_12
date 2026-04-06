@@ -14,7 +14,8 @@ import llm.core.model.ChatRole
  * Извлекает кандидатов по слоям памяти с помощью отдельного LLM-вызова.
  */
 class LlmMemoryLayerAllocator(
-    private val extractor: LlmMemoryLayerAllocationExtractor
+    private val extractor: LlmMemoryLayerAllocationExtractor,
+    private val traceLogger: LlmMemoryLayerAllocatorTraceLogger? = null
 ) : MemoryLayerAllocator {
     /**
      * Извлекает кандидатов из нового сообщения.
@@ -28,6 +29,7 @@ class LlmMemoryLayerAllocator(
             emptyList()
         } else {
             extractor.extract(state, message).toCandidateDrafts()
+                .also { candidates -> traceLogger?.logFinalCandidates(candidates) }
         }
 }
 
@@ -80,7 +82,8 @@ data class LlmMemoryLayerExtraction(
 class LlmConversationMemoryLayerAllocationExtractor(
     private val languageModel: LanguageModel,
     private val promptBuilder: LlmMemoryLayerAllocatorPromptBuilder = LlmMemoryLayerAllocatorPromptBuilder(),
-    private val json: Json = Json { ignoreUnknownKeys = true }
+    private val json: Json = Json { ignoreUnknownKeys = true },
+    private val traceLogger: LlmMemoryLayerAllocatorTraceLogger? = null
 ) : LlmMemoryLayerAllocationExtractor {
     /**
      * Запрашивает у модели кандидатов для layered memory.
@@ -90,19 +93,34 @@ class LlmConversationMemoryLayerAllocationExtractor(
      * @return извлечённые working- и long-term заметки.
      */
     override fun extract(state: MemoryState, message: ChatMessage): LlmMemoryLayerExtraction {
-        val response = languageModel.complete(
-            listOf(
-                ChatMessage(role = ChatRole.SYSTEM, content = promptBuilder.buildSystemPrompt()),
-                ChatMessage(role = ChatRole.USER, content = promptBuilder.buildUserPrompt(state, message))
-            )
+        val systemPrompt = promptBuilder.buildSystemPrompt()
+        val userPrompt = promptBuilder.buildUserPrompt(state, message)
+        traceLogger?.logRequest(
+            state = state,
+            message = message,
+            systemPrompt = systemPrompt,
+            userPrompt = userPrompt
         )
 
-        val payload = extractJsonObject(response.content)
-        val parsed = json.decodeFromString<LlmMemoryLayerAllocationPayload>(payload)
-        return LlmMemoryLayerExtraction(
-            workingNotes = parsed.working.toMemoryNotes(MemoryLayerCategories.workingCategories),
-            longTermNotes = parsed.longTerm.toMemoryNotes(MemoryLayerCategories.longTermCategories)
-        )
+        return try {
+            val response = languageModel.complete(
+                listOf(
+                    ChatMessage(role = ChatRole.SYSTEM, content = systemPrompt),
+                    ChatMessage(role = ChatRole.USER, content = userPrompt)
+                )
+            )
+            traceLogger?.logRawResponse(response.content)
+
+            val payload = extractJsonObject(response.content)
+            val parsed = json.decodeFromString<LlmMemoryLayerAllocationPayload>(payload)
+            LlmMemoryLayerExtraction(
+                workingNotes = parsed.working.toMemoryNotes(MemoryLayerCategories.workingCategories),
+                longTermNotes = parsed.longTerm.toMemoryNotes(MemoryLayerCategories.longTermCategories)
+            ).also { extraction -> traceLogger?.logParsedExtraction(extraction) }
+        } catch (error: Throwable) {
+            traceLogger?.logFailure(error)
+            throw error
+        }
     }
 
     /**
