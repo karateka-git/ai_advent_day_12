@@ -17,8 +17,8 @@ object MemoryLayerAllocatorFactory {
     /**
      * Создаёт allocator по runtime-конфигурации.
      *
-     * Если настроен `HF_API_TOKEN`, для распределения памяти используется отдельный
-     * `HuggingFaceLanguageModel`. Иначе возвращается rule-based fallback.
+ * Если настроен `HF_API_TOKEN`, для распределения памяти используется отдельный
+ * `HuggingFaceLanguageModel`. Иначе возвращается no-op allocator.
      */
     fun create(config: Properties, httpClient: HttpClient): MemoryLayerAllocator {
         val hfToken = config.getProperty("HF_API_TOKEN")?.takeIf { it.isNotBlank() }
@@ -35,11 +35,11 @@ object MemoryLayerAllocatorFactory {
                     ),
                     traceLogger = traceLogger
                 ),
-                fallback = RuleBasedMemoryLayerAllocator(),
+                fallback = NoOpMemoryLayerAllocator(),
                 traceLogger = traceLogger
             )
         } else {
-            RuleBasedMemoryLayerAllocator()
+            NoOpMemoryLayerAllocator()
         }
     }
 }

@@ -35,7 +35,9 @@ class DurableMemoryCandidateApplier(
             candidate to MemoryNote(
                 id = "n${state.nextNoteId + index}",
                 category = candidate.category,
-                content = candidate.content
+                content = candidate.content,
+                ownerType = candidate.ownerType,
+                ownerId = candidate.ownerId
             )
         }
         val workingAdditions = candidates

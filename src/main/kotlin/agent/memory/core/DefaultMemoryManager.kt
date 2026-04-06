@@ -9,10 +9,10 @@ import agent.memory.layer.DurableMemoryCandidateApplier
 import agent.memory.layer.MemoryCandidateApplier
 import agent.memory.layer.MemoryCandidateValidator
 import agent.memory.layer.MemoryConfirmationPolicy
-import agent.memory.layer.MemoryLayerCategories
 import agent.memory.layer.MemoryLayerAllocator
+import agent.memory.layer.MemoryLayerCategories
 import agent.memory.layer.MemoryLayerWritePolicy
-import agent.memory.layer.RuleBasedMemoryLayerAllocator
+import agent.memory.layer.NoOpMemoryLayerAllocator
 import agent.memory.layer.RuleBasedMemoryNoteMergePolicy
 import agent.memory.layer.UserMessageOnlyMemoryLayerWritePolicy
 import agent.memory.model.LongTermMemory
@@ -21,6 +21,7 @@ import agent.memory.model.ManagedMemoryNoteResult
 import agent.memory.model.MemoryCandidateDraft
 import agent.memory.model.MemoryLayer
 import agent.memory.model.MemoryNote
+import agent.memory.model.MemoryOwnerType
 import agent.memory.model.MemorySnapshot
 import agent.memory.model.MemoryState
 import agent.memory.model.PendingMemoryActionResult
@@ -28,6 +29,7 @@ import agent.memory.model.PendingMemoryCandidate
 import agent.memory.model.PendingMemoryEdit
 import agent.memory.model.PendingMemoryState
 import agent.memory.model.ShortTermMemory
+import agent.memory.model.UserAccount
 import agent.memory.model.WorkingMemory
 import agent.memory.persistence.JsonMemoryStateRepository
 import agent.memory.persistence.MemoryStateRepository
@@ -43,9 +45,6 @@ import llm.core.LanguageModel
 import llm.core.model.ChatMessage
 import llm.core.model.ChatRole
 
-/**
- * Базовый in-memory менеджер диалога с явной layered memory model.
- */
 class DefaultMemoryManager(
     private val languageModel: LanguageModel,
     private val systemPrompt: String,
@@ -53,7 +52,7 @@ class DefaultMemoryManager(
     private val memoryStrategy: MemoryStrategy = NoCompressionMemoryStrategy(),
     private val lifecycleListener: AgentLifecycleListener = NoOpAgentLifecycleListener,
     private val branchCoordinator: BranchCoordinator = BranchCoordinator(),
-    private val memoryLayerAllocator: MemoryLayerAllocator = RuleBasedMemoryLayerAllocator(),
+    private val memoryLayerAllocator: MemoryLayerAllocator = NoOpMemoryLayerAllocator(),
     private val memoryLayerWritePolicy: MemoryLayerWritePolicy = UserMessageOnlyMemoryLayerWritePolicy(),
     private val candidateValidator: MemoryCandidateValidator = MemoryCandidateValidator(),
     private val confirmationPolicy: MemoryConfirmationPolicy = DefaultMemoryConfirmationPolicy(),
@@ -144,6 +143,39 @@ class DefaultMemoryManager(
             shortTermStrategyType = memoryStrategy.type
         )
 
+    override fun users(): List<UserAccount> = state.users
+
+    override fun activeUser(): UserAccount = state.activeUser()
+
+    override fun createUser(userId: String, displayName: String?): UserAccount {
+        val normalizedId = normalizeUserId(userId)
+        require(state.users.none { it.id == normalizedId }) {
+            "Пользователь '$normalizedId' уже существует."
+        }
+
+        val user = UserAccount(
+            id = normalizedId,
+            displayName = displayName?.trim().takeUnless { it.isNullOrBlank() } ?: normalizedId
+        )
+        saveState(
+            state.copy(
+                users = state.users + user
+            )
+        )
+        return user
+    }
+
+    override fun switchUser(userId: String): UserAccount {
+        val normalizedId = normalizeUserId(userId)
+        val user = state.users.firstOrNull { it.id == normalizedId }
+            ?: error("Пользователь '$normalizedId' не найден.")
+        saveState(state.copy(activeUserId = user.id))
+        return user
+    }
+
+    override fun profileNotes(): List<MemoryNote> =
+        state.longTerm.notes.filter { it.ownerType == MemoryOwnerType.USER && it.ownerId == state.activeUserId }
+
     override fun pendingMemory(): PendingMemoryState = state.pending
 
     override fun approvePendingMemory(candidateIds: List<String>): PendingMemoryActionResult {
@@ -161,8 +193,7 @@ class DefaultMemoryManager(
 
     override fun rejectPendingMemory(candidateIds: List<String>): PendingMemoryActionResult {
         val (selected, remaining) = selectPendingCandidates(candidateIds)
-        state = state.copy(pending = remaining)
-        saveState()
+        saveState(state.copy(pending = remaining))
         return PendingMemoryActionResult(
             affectedIds = selected.map(PendingMemoryCandidate::id),
             pendingState = state.pending
@@ -175,14 +206,15 @@ class DefaultMemoryManager(
         val updatedCandidate = applyPendingEdit(existing, edit)
         candidateValidator.validateEditedCandidate(toDraft(updatedCandidate))
 
-        state = state.copy(
-            pending = state.pending.copy(
-                candidates = state.pending.candidates.map { candidate ->
-                    if (candidate.id == candidateId) updatedCandidate else candidate
-                }
+        saveState(
+            state.copy(
+                pending = state.pending.copy(
+                    candidates = state.pending.candidates.map { candidate ->
+                        if (candidate.id == candidateId) updatedCandidate else candidate
+                    }
+                )
             )
         )
-        saveState()
         return state.pending
     }
 
@@ -223,17 +255,7 @@ class DefaultMemoryManager(
         val existing = notesFor(layer).firstOrNull { it.id == noteId }
             ?: error("Заметка '$noteId' не найдена в слое ${layer.name.lowercase()}.")
 
-        val updated = when (edit) {
-            is ManagedMemoryNoteEdit.UpdateText -> {
-                require(edit.content.isNotBlank()) { "Текст заметки не должен быть пустым." }
-                existing.copy(content = edit.content.trim())
-            }
-            is ManagedMemoryNoteEdit.UpdateCategory -> {
-                validateManagedCategory(layer, edit.category)
-                existing.copy(category = edit.category.trim())
-            }
-        }
-
+        val updated = updateManagedNote(layer, existing, edit)
         val updatedState = updateNotes(
             layer = layer,
             notes = notesFor(layer).map { if (it.id == noteId) updated else it }
@@ -257,6 +279,51 @@ class DefaultMemoryManager(
         return ManagedMemoryNoteResult(note = existing, state = state)
     }
 
+    override fun addProfileNote(category: String, content: String): ManagedMemoryNoteResult {
+        validateManagedNoteInput(MemoryLayer.LONG_TERM, category, content)
+        val note = MemoryNote(
+            id = "n${state.nextNoteId}",
+            category = category.trim(),
+            content = content.trim(),
+            ownerType = MemoryOwnerType.USER,
+            ownerId = state.activeUserId
+        )
+        saveState(
+            state.copy(
+                longTerm = state.longTerm.copy(notes = state.longTerm.notes + note),
+                nextNoteId = state.nextNoteId + 1
+            )
+        )
+        return ManagedMemoryNoteResult(note = note, state = state)
+    }
+
+    override fun editProfileNote(noteId: String, edit: ManagedMemoryNoteEdit): ManagedMemoryNoteResult {
+        val existing = profileNotes().firstOrNull { it.id == noteId }
+            ?: error("Профильная заметка '$noteId' не найдена у активного пользователя.")
+        val updated = updateManagedNote(MemoryLayer.LONG_TERM, existing, edit)
+        saveState(
+            state.copy(
+                longTerm = state.longTerm.copy(
+                    notes = state.longTerm.notes.map { note -> if (note.id == noteId) updated else note }
+                )
+            )
+        )
+        return ManagedMemoryNoteResult(note = updated, state = state)
+    }
+
+    override fun deleteProfileNote(noteId: String): ManagedMemoryNoteResult {
+        val existing = profileNotes().firstOrNull { it.id == noteId }
+            ?: error("Профильная заметка '$noteId' не найдена у активного пользователя.")
+        saveState(
+            state.copy(
+                longTerm = state.longTerm.copy(
+                    notes = state.longTerm.notes.filterNot { it.id == noteId }
+                )
+            )
+        )
+        return ManagedMemoryNoteResult(note = existing, state = state)
+    }
+
     override fun <TCapability : AgentCapability> capability(capabilityType: Class<TCapability>): TCapability? =
         branchingCapability
             .takeIf { memoryStrategy.type == MemoryStrategyType.BRANCHING && capabilityType.isInstance(it) }
@@ -265,7 +332,8 @@ class DefaultMemoryManager(
     private fun loadMemoryState(): MemoryState {
         val savedState = memoryStateRepository.load()
         if (savedState.shortTerm.rawMessages.isNotEmpty()) {
-            val refreshedState = memoryStrategy.refreshState(savedState, MemoryStateRefreshMode.REGULAR)
+            val normalizedState = normalizeUsers(savedState)
+            val refreshedState = memoryStrategy.refreshState(normalizedState, MemoryStateRefreshMode.REGULAR)
             if (refreshedState != savedState) {
                 memoryStateRepository.save(refreshedState)
             }
@@ -282,6 +350,16 @@ class DefaultMemoryManager(
         )
         saveState(initialState)
         return initialState
+    }
+
+    private fun normalizeUsers(sourceState: MemoryState): MemoryState {
+        if (sourceState.users.isNotEmpty() && sourceState.users.any { it.id == sourceState.activeUserId }) {
+            return sourceState
+        }
+        return sourceState.copy(
+            users = if (sourceState.users.isEmpty()) listOf(UserAccount(MemoryState.DEFAULT_USER_ID, "Default")) else sourceState.users,
+            activeUserId = sourceState.users.firstOrNull()?.id ?: MemoryState.DEFAULT_USER_ID
+        )
     }
 
     private fun saveState() {
@@ -354,7 +432,7 @@ class DefaultMemoryManager(
         }
 
         val extractedCandidates = memoryLayerAllocator.extractCandidates(currentState, message)
-        val validatedCandidates = candidateValidator.validate(message, extractedCandidates)
+        val validatedCandidates = candidateValidator.validate(currentState, message, extractedCandidates)
         val confirmationDecision = confirmationPolicy.classify(message.role, validatedCandidates)
         val stateWithAutoApplied = candidateApplier.apply(currentState, confirmationDecision.autoApply)
         return appendPendingCandidates(stateWithAutoApplied, message, confirmationDecision.pending)
@@ -376,6 +454,8 @@ class DefaultMemoryManager(
                 targetLayer = draft.targetLayer,
                 category = draft.category,
                 content = draft.content,
+                ownerType = draft.ownerType,
+                ownerId = draft.ownerId,
                 sourceRole = message.role,
                 sourceMessage = message.content
             )
@@ -398,6 +478,8 @@ class DefaultMemoryManager(
                 candidate.targetLayer.name,
                 candidate.category.lowercase(),
                 candidate.content.lowercase(),
+                candidate.ownerType.name,
+                candidate.ownerId ?: "",
                 candidate.sourceRole.name,
                 candidate.sourceMessage.lowercase()
             ).joinToString("|")
@@ -428,7 +510,9 @@ class DefaultMemoryManager(
         MemoryCandidateDraft(
             targetLayer = candidate.targetLayer,
             category = candidate.category,
-            content = candidate.content
+            content = candidate.content,
+            ownerType = candidate.ownerType,
+            ownerId = candidate.ownerId
         )
 
     private fun validateManagedNoteInput(layer: MemoryLayer, category: String, content: String) {
@@ -448,6 +532,18 @@ class DefaultMemoryManager(
         }
     }
 
+    private fun updateManagedNote(layer: MemoryLayer, existing: MemoryNote, edit: ManagedMemoryNoteEdit): MemoryNote =
+        when (edit) {
+            is ManagedMemoryNoteEdit.UpdateText -> {
+                require(edit.content.isNotBlank()) { "Текст заметки не должен быть пустым." }
+                existing.copy(content = edit.content.trim())
+            }
+            is ManagedMemoryNoteEdit.UpdateCategory -> {
+                validateManagedCategory(layer, edit.category)
+                existing.copy(category = edit.category.trim())
+            }
+        }
+
     private fun notesFor(layer: MemoryLayer): List<MemoryNote> =
         when (layer) {
             MemoryLayer.WORKING -> state.working.notes
@@ -461,4 +557,12 @@ class DefaultMemoryManager(
             MemoryLayer.LONG_TERM -> state.copy(longTerm = LongTermMemory(notes = notes))
             MemoryLayer.SHORT_TERM -> state
         }
+
+    private fun normalizeUserId(rawValue: String): String =
+        rawValue
+            .trim()
+            .lowercase()
+            .replace(Regex("[^a-z0-9_-]+"), "-")
+            .trim('-')
+            .ifBlank { error("Идентификатор пользователя не должен быть пустым.") }
 }

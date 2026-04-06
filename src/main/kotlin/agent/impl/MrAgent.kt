@@ -13,14 +13,16 @@ import agent.memory.core.DefaultMemoryManager
 import agent.memory.core.MemoryManager
 import agent.memory.core.MemoryStrategy
 import agent.memory.layer.MemoryLayerAllocator
-import agent.memory.layer.RuleBasedMemoryLayerAllocator
+import agent.memory.layer.NoOpMemoryLayerAllocator
 import agent.memory.model.ManagedMemoryNoteEdit
 import agent.memory.model.ManagedMemoryNoteResult
 import agent.memory.model.MemoryLayer
+import agent.memory.model.MemoryNote
 import agent.memory.model.MemorySnapshot
 import agent.memory.model.PendingMemoryActionResult
 import agent.memory.model.PendingMemoryEdit
 import agent.memory.model.PendingMemoryState
+import agent.memory.model.UserAccount
 import agent.memory.strategy.summary.LlmConversationSummarizer
 import agent.memory.strategy.summary.SummaryCompressionMemoryStrategy
 import java.nio.file.Path
@@ -41,7 +43,7 @@ class MrAgent(
         summaryBatchSize = 3,
         summarizer = LlmConversationSummarizer(languageModel)
     ),
-    memoryLayerAllocator: MemoryLayerAllocator = RuleBasedMemoryLayerAllocator(),
+    memoryLayerAllocator: MemoryLayerAllocator = NoOpMemoryLayerAllocator(),
     private val memoryManager: MemoryManager = DefaultMemoryManager(
         languageModel = languageModel,
         systemPrompt = buildSystemPrompt(
@@ -96,6 +98,18 @@ class MrAgent(
 
     override fun inspectMemory(): MemorySnapshot = memoryManager.memorySnapshot()
 
+    override fun users(): List<UserAccount> = memoryManager.users()
+
+    override fun activeUser(): UserAccount = memoryManager.activeUser()
+
+    override fun createUser(userId: String, displayName: String?): UserAccount =
+        memoryManager.createUser(userId, displayName)
+
+    override fun switchUser(userId: String): UserAccount =
+        memoryManager.switchUser(userId)
+
+    override fun inspectProfile(): List<MemoryNote> = memoryManager.profileNotes()
+
     override fun inspectPendingMemory(): PendingMemoryState = memoryManager.pendingMemory()
 
     override fun approvePendingMemory(candidateIds: List<String>): PendingMemoryActionResult =
@@ -118,6 +132,15 @@ class MrAgent(
 
     override fun deleteMemoryNote(layer: MemoryLayer, noteId: String): ManagedMemoryNoteResult =
         memoryManager.deleteMemoryNote(layer, noteId)
+
+    override fun addProfileNote(category: String, content: String): ManagedMemoryNoteResult =
+        memoryManager.addProfileNote(category, content)
+
+    override fun editProfileNote(noteId: String, edit: ManagedMemoryNoteEdit): ManagedMemoryNoteResult =
+        memoryManager.editProfileNote(noteId, edit)
+
+    override fun deleteProfileNote(noteId: String): ManagedMemoryNoteResult =
+        memoryManager.deleteProfileNote(noteId)
 
     override fun <TCapability : AgentCapability> capability(capabilityType: Class<TCapability>): TCapability? =
         memoryManager.capability(capabilityType)

@@ -3,8 +3,10 @@ package agent.memory.prompt
 import agent.memory.core.MemoryStrategy
 import agent.memory.model.LongTermMemory
 import agent.memory.model.MemoryNote
+import agent.memory.model.MemoryOwnerType
 import agent.memory.model.MemoryState
 import agent.memory.model.ShortTermMemory
+import agent.memory.model.UserAccount
 import agent.memory.model.WorkingMemory
 import agent.memory.strategy.MemoryStrategyType
 import kotlin.test.Test
@@ -34,12 +36,23 @@ class MemoryContextServiceTest {
                     ChatMessage(ChatRole.USER, "Привет")
                 )
             ),
+            longTerm = LongTermMemory(
+                notes = listOf(
+                    MemoryNote(
+                        id = "",
+                        category = "communication_style",
+                        content = "Отвечай кратко",
+                        ownerType = MemoryOwnerType.USER,
+                        ownerId = "anna"
+                    ),
+                    MemoryNote("architectural_agreement", "Используем Kotlin CLI")
+                )
+            ),
             working = WorkingMemory(
                 notes = listOf(MemoryNote("goal", "Собрать ТЗ"))
             ),
-            longTerm = LongTermMemory(
-                notes = listOf(MemoryNote("communication_style", "Отвечай кратко"))
-            )
+            users = listOf(UserAccount("anna", "Anna")),
+            activeUserId = "anna"
         )
 
         val conversation = service.effectiveConversation(
@@ -50,7 +63,7 @@ class MemoryContextServiceTest {
         assertEquals(
             ChatMessage(
                 ChatRole.SYSTEM,
-                "Ты помощник.\n\nLong-term memory\n- communication_style: Отвечай кратко\n\nWorking memory\n- goal: Собрать ТЗ"
+                "Ты помощник.\n\nUser profile (Anna)\n- communication_style: Отвечай кратко\n\nLong-term memory\n- architectural_agreement: Используем Kotlin CLI\n\nWorking memory\n- goal: Собрать ТЗ"
             ),
             conversation.first()
         )

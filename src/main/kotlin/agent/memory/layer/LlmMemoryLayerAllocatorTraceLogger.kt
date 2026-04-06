@@ -15,7 +15,7 @@ import llm.core.model.ChatMessage
  * Лог нужен для диагностики случаев, когда utility LLM:
  * - не возвращает кандидатов;
  * - возвращает неожиданный JSON;
- * - падает и приводит к fallback на rule-based allocator.
+ * - падает и приводит к fallback на no-op allocator.
  */
 class LlmMemoryLayerAllocatorTraceLogger(
     private val logPath: Path = Path.of("build", "logs", "llm-memory-layer-allocator.log")
@@ -86,12 +86,13 @@ class LlmMemoryLayerAllocatorTraceLogger(
     }
 
     /**
-     * Логирует ошибку primary allocator и факт переключения на fallback.
+     * Логирует ошибку primary allocator и факт переключения на no-op fallback.
      */
     fun logFallback(error: Throwable) {
         appendBlock(
             title = "LLM allocator fallback",
             lines = listOf(
+                "fallback=no-op",
                 "error.type=${error::class.qualifiedName}",
                 "error.message=${error.message ?: "(no message)"}"
             )

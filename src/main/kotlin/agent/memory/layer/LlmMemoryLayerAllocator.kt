@@ -3,6 +3,7 @@ package agent.memory.layer
 import agent.memory.model.MemoryCandidateDraft
 import agent.memory.model.MemoryLayer
 import agent.memory.model.MemoryNote
+import agent.memory.model.MemoryOwnerType
 import agent.memory.model.MemoryState
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -17,18 +18,11 @@ class LlmMemoryLayerAllocator(
     private val extractor: LlmMemoryLayerAllocationExtractor,
     private val traceLogger: LlmMemoryLayerAllocatorTraceLogger? = null
 ) : MemoryLayerAllocator {
-    /**
-     * Извлекает кандидатов из нового сообщения.
-     *
-     * @param state текущее состояние памяти.
-     * @param message новое сообщение, которое нужно проанализировать.
-     * @return кандидаты для working и long-term слоёв.
-     */
     override fun extractCandidates(state: MemoryState, message: ChatMessage): List<MemoryCandidateDraft> =
         if (message.role == ChatRole.SYSTEM) {
             emptyList()
         } else {
-            extractor.extract(state, message).toCandidateDrafts()
+            extractor.extract(state, message).toCandidateDrafts(state.activeUserId)
                 .also { candidates -> traceLogger?.logFinalCandidates(candidates) }
         }
 }
@@ -37,21 +31,11 @@ class LlmMemoryLayerAllocator(
  * Контракт компонента, который анализирует сообщение через LLM и извлекает заметки.
  */
 interface LlmMemoryLayerAllocationExtractor {
-    /**
-     * Извлекает кандидатов из одного сообщения.
-     *
-     * @param state текущее состояние памяти.
-     * @param message новое сообщение пользователя или ассистента.
-     * @return извлечённые working- и long-term заметки.
-     */
     fun extract(state: MemoryState, message: ChatMessage): LlmMemoryLayerExtraction
 }
 
 /**
  * Результат извлечения заметок из одного сообщения.
- *
- * @property workingNotes заметки для рабочей памяти.
- * @property longTermNotes заметки для долговременной памяти.
  */
 data class LlmMemoryLayerExtraction(
     val workingNotes: List<MemoryNote> = emptyList(),
@@ -59,19 +43,28 @@ data class LlmMemoryLayerExtraction(
 ) {
     /**
      * Преобразует результат извлечения в черновики кандидатов.
+     *
+     * Для user-scoped long-term заметок подставляет `ownerId` активного пользователя.
      */
-    fun toCandidateDrafts(): List<MemoryCandidateDraft> =
+    fun toCandidateDrafts(activeUserId: String): List<MemoryCandidateDraft> =
         workingNotes.map { note ->
             MemoryCandidateDraft(
                 targetLayer = MemoryLayer.WORKING,
                 category = note.category,
-                content = note.content
+                content = note.content,
+                ownerType = note.ownerType,
+                ownerId = note.ownerId
             )
         } + longTermNotes.map { note ->
             MemoryCandidateDraft(
                 targetLayer = MemoryLayer.LONG_TERM,
                 category = note.category,
-                content = note.content
+                content = note.content,
+                ownerType = note.ownerType,
+                ownerId = when (note.ownerType) {
+                    MemoryOwnerType.GLOBAL -> null
+                    MemoryOwnerType.USER -> note.ownerId ?: activeUserId
+                }
             )
         }
 }
@@ -85,13 +78,6 @@ class LlmConversationMemoryLayerAllocationExtractor(
     private val json: Json = Json { ignoreUnknownKeys = true },
     private val traceLogger: LlmMemoryLayerAllocatorTraceLogger? = null
 ) : LlmMemoryLayerAllocationExtractor {
-    /**
-     * Запрашивает у модели кандидатов для layered memory.
-     *
-     * @param state текущее состояние памяти.
-     * @param message новое сообщение.
-     * @return извлечённые working- и long-term заметки.
-     */
     override fun extract(state: MemoryState, message: ChatMessage): LlmMemoryLayerExtraction {
         val systemPrompt = promptBuilder.buildSystemPrompt()
         val userPrompt = promptBuilder.buildUserPrompt(state, message)
@@ -114,8 +100,8 @@ class LlmConversationMemoryLayerAllocationExtractor(
             val payload = extractJsonObject(response.content)
             val parsed = json.decodeFromString<LlmMemoryLayerAllocationPayload>(payload)
             LlmMemoryLayerExtraction(
-                workingNotes = parsed.working.toMemoryNotes(MemoryLayerCategories.workingCategories),
-                longTermNotes = parsed.longTerm.toMemoryNotes(MemoryLayerCategories.longTermCategories)
+                workingNotes = parsed.working.toMemoryNotes(MemoryLayerCategories.workingCategories, allowScope = false),
+                longTermNotes = parsed.longTerm.toMemoryNotes(MemoryLayerCategories.longTermCategories, allowScope = true)
             ).also { extraction -> traceLogger?.logParsedExtraction(extraction) }
         } catch (error: Throwable) {
             traceLogger?.logFailure(error)
@@ -123,12 +109,6 @@ class LlmConversationMemoryLayerAllocationExtractor(
         }
     }
 
-    /**
-     * Выделяет JSON-объект из ответа модели.
-     *
-     * @param rawContent сырой текст ответа модели.
-     * @return строка с JSON-объектом.
-     */
     fun extractJsonObject(rawContent: String): String {
         val fencedJson = Regex("```json\\s*(\\{[\\s\\S]*})\\s*```").find(rawContent)
         if (fencedJson != null) {
@@ -149,15 +129,31 @@ class LlmConversationMemoryLayerAllocationExtractor(
         return rawContent.substring(firstBrace, lastBrace + 1)
     }
 
-    private fun List<LlmMemoryNotePayload>.toMemoryNotes(allowedCategories: Set<String>): List<MemoryNote> =
+    private fun List<LlmMemoryNotePayload>.toMemoryNotes(
+        allowedCategories: Set<String>,
+        allowScope: Boolean
+    ): List<MemoryNote> =
         mapNotNull { payload ->
             val category = payload.category.trim()
             val content = payload.content.trim()
-            if (category in allowedCategories && content.isNotBlank()) {
-                MemoryNote(id = "", category = category, content = content)
-            } else {
-                null
+            if (category !in allowedCategories || content.isBlank()) {
+                return@mapNotNull null
             }
+
+            val ownerType = if (allowScope) payload.scope.toOwnerType() else MemoryOwnerType.GLOBAL
+            MemoryNote(
+                id = "",
+                category = category,
+                content = content,
+                ownerType = ownerType,
+                ownerId = null
+            )
+        }
+
+    private fun String.toOwnerType(): MemoryOwnerType =
+        when (trim().lowercase()) {
+            "user" -> MemoryOwnerType.USER
+            else -> MemoryOwnerType.GLOBAL
         }
 }
 
@@ -165,9 +161,6 @@ class LlmConversationMemoryLayerAllocationExtractor(
  * Собирает prompt для LLM-распределителя памяти.
  */
 class LlmMemoryLayerAllocatorPromptBuilder {
-    /**
-     * Создаёт системный prompt с правилами различения working и long-term памяти.
-     */
     fun buildSystemPrompt(): String =
         """
         Ты анализируешь новое сообщение и предлагаешь, что стоит сохранить в layered memory ассистента.
@@ -181,57 +174,51 @@ class LlmMemoryLayerAllocatorPromptBuilder {
         Long-term memory хранит только устойчивые данные, которые с высокой вероятностью пригодятся в будущих диалогах:
         ${MemoryLayerCategories.formatForPrompt(MemoryLayer.LONG_TERM)}
 
-        Как различать слои:
-        - Working memory: цель, ограничения, сроки, бюджет, интеграции, решения и открытые вопросы именно текущей задачи.
-        - Long-term memory: постоянные предпочтения, устойчивые договорённости, повторно полезные знания о пользователе или проекте.
+        В long-term у каждой заметки есть scope:
+        - user: предпочтение или устойчивое знание именно о текущем активном пользователе;
+        - global: общее знание о проекте, архитектуре или ассистенте, не привязанное к одному пользователю.
 
-        Что считать устойчивыми long-term данными:
-        - предпочтение по стилю общения, которое выглядит как общее правило, а не как одноразовая просьба;
-        - постоянное пользовательское предпочтение;
-        - архитектурную договорённость, которая должна сохраняться между задачами;
-        - знание о проекте или пользователе, которое пригодится не только в текущем шаге.
+        Как различать scope в long-term:
+        - communication_style и persistent_preference обычно относятся к scope=user, если сообщение описывает предпочтения конкретного пользователя;
+        - architectural_agreement и reusable_knowledge обычно относятся к scope=global, если речь о проекте или общей договорённости.
+
+        Уже сохранённая working memory и long-term memory даются только как справка о том, что сохранять НЕ НУЖНО повторно.
+        Никогда не копируй, не перефразируй и не возвращай заметки из уже сохранённой памяти как новые кандидаты.
+        Извлекать можно только то, что явно содержится в новом сообщении.
 
         Что не нужно сохранять:
         - обычные вопросы, команды и служебные сообщения;
-        - просьбы напомнить, повторить, перечислить или пересказать уже известное;
-        - временные детали, если они относятся только к текущему ответу и не выглядят устойчивыми;
-        - рассуждения, предположения и данные, которых нет в сообщении явно.
+        - временные детали текущего ответа;
+        - уже сохранённые факты из working memory или long-term memory;
+        - предположения, которых нет в сообщении явно.
 
-        Важные правила:
-        - не выдумывай заметки;
-        - не сохраняй сообщение целиком, если нужно сохранить только отдельный смысловой фрагмент;
-        - можно вернуть записи сразу в оба слоя, если сообщение содержит и рабочие, и устойчивые данные;
-        - пустой longTerm или пустой working — это нормальный результат.
-        - сохраняй content на том же языке, что и исходное сообщение;
-        - не переводи и не меняй язык заметки;
-        - по возможности используй максимально близкую формулировку к сообщению пользователя.
-
-        Примеры:
-        - "Срок проекта две недели, интеграция только с Google Sheets" -> working.
-        - "Отвечай кратко и на русском" -> longTerm, если это выглядит как общее предпочтение стиля общения.
-        - "Напомни мой стиль общения" -> не сохранять.
-        - "В этом проекте бизнес-логика не должна зависеть от CLI" -> longTerm как устойчивая архитектурная договорённость.
+        Пример:
+        - если новое сообщение: "Привет!"
+        - а в long-term memory уже есть предпочтения по стилю общения
+        - нужно вернуть пустые массивы, а не повторять эти предпочтения
 
         Верни только валидный JSON:
         {
           "working": [{"category": "...", "content": "..."}],
-          "longTerm": [{"category": "...", "content": "..."}]
+          "longTerm": [{"category": "...", "content": "...", "scope": "user|global"}]
         }
         """.trimIndent()
 
-    /**
-     * Создаёт пользовательский prompt с текущим состоянием durable memory и новым сообщением.
-     */
     fun buildUserPrompt(state: MemoryState, message: ChatMessage): String =
         buildString {
-            appendLine("Текущая working memory:")
+            appendLine("Активный пользователь:")
+            appendLine("- id: ${state.activeUserId}")
+            appendLine("- displayName: ${state.activeUser().displayName}")
+            appendLine()
+            appendLine("Уже сохранённая working memory (не повторяй её в ответе):")
             appendLine(formatNotes(state.working.notes))
             appendLine()
-            appendLine("Текущая long-term memory:")
+            appendLine("Уже сохранённая long-term memory (не повторяй и не перефразируй её в ответе):")
             appendLine(formatNotes(state.longTerm.notes))
             appendLine()
             appendLine("Нужно проанализировать только новое сообщение и извлечь из него новые кандидаты в память.")
             appendLine("Если сообщение не содержит новых полезных данных, верни пустые массивы.")
+            appendLine("Если содержание уже есть в сохранённой памяти, тоже верни пустые массивы.")
             appendLine()
             appendLine("Новое сообщение:")
             appendLine("${message.role.apiValue}: ${message.content}")
@@ -241,7 +228,16 @@ class LlmMemoryLayerAllocatorPromptBuilder {
         if (notes.isEmpty()) {
             "[]"
         } else {
-            notes.joinToString(separator = "\n") { "- ${it.category}: ${it.content}" }
+            notes.joinToString(separator = "\n") { note ->
+                buildString {
+                    append("- ${note.category}: ${note.content}")
+                    if (note.ownerType == MemoryOwnerType.USER) {
+                        append(" [scope=user")
+                        note.ownerId?.let { append(", ownerId=$it") }
+                        append("]")
+                    }
+                }
+            }
         }
 }
 
@@ -254,5 +250,6 @@ private data class LlmMemoryLayerAllocationPayload(
 @Serializable
 private data class LlmMemoryNotePayload(
     val category: String = "",
-    val content: String = ""
+    val content: String = "",
+    val scope: String = "global"
 )

@@ -9,7 +9,9 @@ import agent.memory.model.PendingMemoryActionResult
 import agent.memory.model.PendingMemoryEdit
 import agent.memory.model.MemorySnapshot
 import agent.memory.model.MemoryLayer
+import agent.memory.model.MemoryNote
 import agent.memory.model.MemoryState
+import agent.memory.model.UserAccount
 import java.nio.file.Path
 import llm.core.model.ChatMessage
 
@@ -75,6 +77,38 @@ interface MemoryManager {
     fun memorySnapshot(): MemorySnapshot
 
     /**
+     * Возвращает все доступные пользовательские профили для текущего persisted state.
+     */
+    fun users(): List<UserAccount>
+
+    /**
+     * Возвращает активного пользователя, профиль которого автоматически попадает в prompt.
+     */
+    fun activeUser(): UserAccount
+
+    /**
+     * Создаёт нового пользователя для multi-user персонализации.
+     *
+     * @param userId стабильный идентификатор пользователя.
+     * @param displayName отображаемое имя; если не задано, используется `userId`.
+     * @return созданный пользователь.
+     */
+    fun createUser(userId: String, displayName: String? = null): UserAccount
+
+    /**
+     * Переключает активного пользователя текущей сессии.
+     *
+     * @param userId идентификатор профиля, который нужно активировать.
+     * @return новый активный пользователь.
+     */
+    fun switchUser(userId: String): UserAccount
+
+    /**
+     * Возвращает user-scoped long-term заметки активного пользователя.
+     */
+    fun profileNotes(): List<MemoryNote>
+
+    /**
      * Возвращает текущую очередь кандидатов, ожидающих подтверждения пользователя.
      */
     fun pendingMemory(): PendingMemoryState
@@ -123,6 +157,21 @@ interface MemoryManager {
      * Удаляет заметку из выбранного durable memory слоя.
      */
     fun deleteMemoryNote(layer: MemoryLayer, noteId: String): ManagedMemoryNoteResult
+
+    /**
+     * Добавляет заметку в профиль активного пользователя.
+     */
+    fun addProfileNote(category: String, content: String): ManagedMemoryNoteResult
+
+    /**
+     * Редактирует существующую профильную заметку активного пользователя.
+     */
+    fun editProfileNote(noteId: String, edit: ManagedMemoryNoteEdit): ManagedMemoryNoteResult
+
+    /**
+     * Удаляет заметку из профиля активного пользователя.
+     */
+    fun deleteProfileNote(noteId: String): ManagedMemoryNoteResult
 
     /**
      * Возвращает capability активной стратегии памяти, если она поддерживается.

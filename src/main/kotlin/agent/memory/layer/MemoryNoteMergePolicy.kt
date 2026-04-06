@@ -17,12 +17,14 @@ interface MemoryNoteMergePolicy {
 }
 
 /**
- * Реализация на основе правил: для категорий с единственным значением оставляет только последнее,
- * а для категорий с несколькими значениями добавляет только уникальные заметки.
+ * Базовая merge policy для durable memory.
+ *
+ * Сохраняет несколько заметок в одной категории и отфильтровывает только точные дубли
+ * в пределах одинаковых `category`, `ownerType`, `ownerId` и `content`.
  */
 class RuleBasedMemoryNoteMergePolicy : MemoryNoteMergePolicy {
     /**
-     * Объединяет заметки по правилам категории и предотвращает бесконтрольное накопление противоречий.
+     * Добавляет новые заметки поверх существующих и пропускает только точные дубли.
      *
      * @param existing текущие заметки слоя.
      * @param additions новые заметки, полученные от распределителя памяти.
@@ -30,39 +32,17 @@ class RuleBasedMemoryNoteMergePolicy : MemoryNoteMergePolicy {
      */
     override fun merge(existing: List<MemoryNote>, additions: List<MemoryNote>): List<MemoryNote> =
         additions.fold(existing) { current, addition ->
-            when (mergeModeFor(addition.category)) {
-                MergeMode.REPLACE_CATEGORY ->
-                    current
-                        .filterNot { it.category == addition.category }
-                        .plus(addition)
-
-                MergeMode.APPEND_DISTINCT ->
-                    if (current.any { it.category == addition.category && it.content.equals(addition.content, ignoreCase = true) }) {
-                        current
-                    } else {
-                        current + addition
-                    }
+            if (
+                current.any {
+                    it.category == addition.category &&
+                        it.ownerType == addition.ownerType &&
+                        it.ownerId == addition.ownerId &&
+                        it.content.equals(addition.content, ignoreCase = true)
+                }
+            ) {
+                current
+            } else {
+                current + addition
             }
         }
-
-    private fun mergeModeFor(category: String): MergeMode =
-        if (category in singleValueCategories) {
-            MergeMode.REPLACE_CATEGORY
-        } else {
-            MergeMode.APPEND_DISTINCT
-        }
-
-    private enum class MergeMode {
-        REPLACE_CATEGORY,
-        APPEND_DISTINCT
-    }
-
-    private companion object {
-        val singleValueCategories = setOf(
-            "goal",
-            "deadline",
-            "budget",
-            "communication_style"
-        )
-    }
 }

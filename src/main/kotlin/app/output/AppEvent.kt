@@ -7,8 +7,10 @@ import agent.core.BranchInfo
 import agent.core.BranchingStatus
 import agent.lifecycle.ContextCompressionStats
 import agent.memory.model.MemoryLayer
+import agent.memory.model.MemoryNote
 import agent.memory.model.MemorySnapshot
 import agent.memory.model.PendingMemoryState
+import agent.memory.model.UserAccount
 import agent.memory.strategy.MemoryStrategyOption
 import llm.core.model.ChatRole
 import llm.core.model.LanguageModelOption
@@ -83,6 +85,16 @@ sealed interface AppEvent {
     data class MemoryStateAvailable(
         val snapshot: MemorySnapshot,
         val selectedLayer: MemoryLayer?
+    ) : AppEvent
+
+    data class UsersAvailable(
+        val users: List<UserAccount>,
+        val activeUserId: String
+    ) : AppEvent
+
+    data class UserProfileAvailable(
+        val user: UserAccount,
+        val notes: List<MemoryNote>
     ) : AppEvent
 
     /**

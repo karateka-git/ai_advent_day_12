@@ -12,7 +12,9 @@ import llm.core.model.ChatRole
 data class MemoryCandidateDraft(
     val targetLayer: MemoryLayer,
     val category: String,
-    val content: String
+    val content: String,
+    val ownerType: MemoryOwnerType = MemoryOwnerType.GLOBAL,
+    val ownerId: String? = null
 )
 
 /**
@@ -30,6 +32,8 @@ data class PendingMemoryCandidate(
     val targetLayer: MemoryLayer,
     val category: String,
     val content: String,
+    val ownerType: MemoryOwnerType = MemoryOwnerType.GLOBAL,
+    val ownerId: String? = null,
     val sourceRole: ChatRole,
     val sourceMessage: String
 )

@@ -54,6 +54,7 @@ class DefaultMemoryContextService(
     override fun effectiveConversation(systemPrompt: String, state: MemoryState): List<ChatMessage> =
         promptAssembler.assemble(
             systemPrompt = systemPrompt,
+            activeUser = state.activeUser(),
             longTermMemory = state.longTerm,
             workingMemory = state.working,
             shortTermContext = memoryStrategyProvider().effectiveContext(state)

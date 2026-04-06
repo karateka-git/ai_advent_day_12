@@ -3,6 +3,7 @@ package ui.cli
 import agent.capability.capability
 import agent.core.Agent
 import agent.lifecycle.AgentLifecycleListener
+import agent.memory.layer.MemoryLayerCategories
 import agent.memory.model.ManagedMemoryNoteEdit
 import agent.memory.model.MemoryLayer
 import agent.memory.model.PendingMemoryEdit
@@ -21,7 +22,7 @@ import llm.core.model.ChatRole
 import llm.core.model.LanguageModelOption
 
 /**
- * Исполняет команды CLI и обычные пользовательские prompt в рамках одной сессии.
+ * Исполняет CLI-команды и обычные пользовательские prompt'ы в рамках одной сессии.
  */
 class CliSessionController(
     initialState: CliSessionState,
@@ -37,17 +38,31 @@ class CliSessionController(
     private val warmUpLanguageModel: (LanguageModel, AgentLifecycleListener) -> Unit
 ) {
     /**
-     * Актуальное состояние текущей CLI-сессии.
+     * Текущее состояние CLI-сессии, включая активного агента и выбранную модель.
      */
     var state: CliSessionState = initialState
         private set
 
+    private var noteDraft: MemoryNoteDraft? = null
+
     /**
-     * Обрабатывает один ввод пользователя: встроенную команду или обычный prompt.
+     * Обрабатывает одну строку пользовательского ввода.
+     *
+     * @param input сырой ввод пользователя из CLI.
+     * @return результат шага сессии: продолжать работу или завершать её.
      */
-    fun handle(input: String): CliSessionControllerResult =
-        when (val command = commandParser.parse(input)) {
+    fun handle(input: String): CliSessionControllerResult {
+        val activeDraft = noteDraft
+        if (activeDraft != null) {
+            return handleDraftInput(activeDraft, input)
+        }
+
+        return when (val command = commandParser.parse(input)) {
             CliCommand.Empty -> CliSessionControllerResult.Continue
+            CliCommand.CancelDraft -> {
+                appEventSink.emit(AppEvent.CommandCompleted("Нет активного пошагового добавления заметки."))
+                CliSessionControllerResult.Continue
+            }
             CliCommand.ShowHelp -> {
                 appEventSink.emit(
                     AppEvent.CommandsAvailable(
@@ -105,11 +120,7 @@ class CliSessionController(
             }
 
             CliCommand.ShowPendingMemory -> {
-                appEventSink.emit(
-                    AppEvent.PendingMemoryAvailable(
-                        pending = state.agent.inspectPendingMemory()
-                    )
-                )
+                appEventSink.emit(AppEvent.PendingMemoryAvailable(pending = state.agent.inspectPendingMemory()))
                 CliSessionControllerResult.Continue
             }
 
@@ -123,102 +134,172 @@ class CliSessionController(
             }
 
             is CliCommand.ApprovePendingMemory -> {
-                try {
-                    val result = state.agent.approvePendingMemory(command.ids)
-                    appEventSink.emit(
-                        AppEvent.PendingMemoryActionCompleted(
-                            message =
-                                if (command.ids.isEmpty()) {
-                                    "Подтверждены все pending-кандидаты: ${result.affectedIds.size}"
-                                } else {
-                                    "Подтверждены pending-кандидаты: ${result.affectedIds.joinToString(", ")}"
-                                },
-                            pending = result.pendingState
+                runCatching { state.agent.approvePendingMemory(command.ids) }
+                    .onSuccess { result ->
+                        appEventSink.emit(
+                            AppEvent.PendingMemoryActionCompleted(
+                                message =
+                                    if (command.ids.isEmpty()) {
+                                        "Подтверждены все pending-кандидаты: ${result.affectedIds.size}"
+                                    } else {
+                                        "Подтверждены pending-кандидаты: ${result.affectedIds.joinToString(", ")}"
+                                    },
+                                pending = result.pendingState
+                            )
                         )
-                    )
-                } catch (error: Exception) {
-                    appEventSink.emit(AppEvent.RequestFailed(error.message))
-                }
+                    }
+                    .onFailure { appEventSink.emit(AppEvent.RequestFailed(it.message)) }
                 CliSessionControllerResult.Continue
             }
 
             is CliCommand.RejectPendingMemory -> {
-                try {
-                    val result = state.agent.rejectPendingMemory(command.ids)
-                    appEventSink.emit(
-                        AppEvent.PendingMemoryActionCompleted(
-                            message =
-                                if (command.ids.isEmpty()) {
-                                    "Отклонены все pending-кандидаты: ${result.affectedIds.size}"
-                                } else {
-                                    "Отклонены pending-кандидаты: ${result.affectedIds.joinToString(", ")}"
-                                },
-                            pending = result.pendingState
+                runCatching { state.agent.rejectPendingMemory(command.ids) }
+                    .onSuccess { result ->
+                        appEventSink.emit(
+                            AppEvent.PendingMemoryActionCompleted(
+                                message =
+                                    if (command.ids.isEmpty()) {
+                                        "Отклонены все pending-кандидаты: ${result.affectedIds.size}"
+                                    } else {
+                                        "Отклонены pending-кандидаты: ${result.affectedIds.joinToString(", ")}"
+                                    },
+                                pending = result.pendingState
+                            )
                         )
-                    )
-                } catch (error: Exception) {
-                    appEventSink.emit(AppEvent.RequestFailed(error.message))
-                }
+                    }
+                    .onFailure { appEventSink.emit(AppEvent.RequestFailed(it.message)) }
                 CliSessionControllerResult.Continue
             }
 
             is CliCommand.EditPendingMemory -> {
-                try {
-                    val updatedPending = state.agent.editPendingMemory(
-                        candidateId = command.id,
-                        edit = parsePendingEdit(command.field, command.value)
-                    )
+                runCatching {
+                    state.agent.editPendingMemory(command.id, parsePendingEdit(command.field, command.value))
+                }.onSuccess { updatedPending ->
                     appEventSink.emit(
                         AppEvent.PendingMemoryActionCompleted(
                             message = "Pending-кандидат ${command.id} обновлён.",
                             pending = updatedPending
                         )
                     )
-                } catch (error: Exception) {
-                    appEventSink.emit(AppEvent.RequestFailed(error.message))
-                }
+                }.onFailure { appEventSink.emit(AppEvent.RequestFailed(it.message)) }
+                CliSessionControllerResult.Continue
+            }
+
+            CliCommand.StartMemoryNoteDraft -> {
+                noteDraft = MemoryNoteDraft.Memory()
+                appEventSink.emit(
+                    AppEvent.CommandCompleted(
+                        "Пошаговое добавление заметки запущено. Выбери слой: working или long. Для отмены введи ${CliCommands.CANCEL}."
+                    )
+                )
                 CliSessionControllerResult.Continue
             }
 
             is CliCommand.AddMemoryNote -> {
-                try {
-                    val result = state.agent.addMemoryNote(command.layer, command.category, command.content)
-                    appEventSink.emit(
-                        AppEvent.CommandCompleted(
-                            "Добавлена заметка ${result.note.id} в слой ${layerLabel(command.layer)}."
-                        )
-                    )
-                } catch (error: Exception) {
-                    appEventSink.emit(AppEvent.RequestFailed(error.message))
-                }
+                runCatching { state.agent.addMemoryNote(command.layer, command.category, command.content) }
+                    .onSuccess { result ->
+                        appEventSink.emit(AppEvent.CommandCompleted("Добавлена заметка ${result.note.id} в слой ${layerLabel(command.layer)}."))
+                    }
+                    .onFailure { appEventSink.emit(AppEvent.RequestFailed(it.message)) }
                 CliSessionControllerResult.Continue
             }
 
             is CliCommand.EditMemoryNote -> {
-                try {
-                    val result = state.agent.editMemoryNote(command.layer, command.id, command.edit)
-                    appEventSink.emit(
-                        AppEvent.CommandCompleted(
-                            "Заметка ${result.note.id} в слое ${layerLabel(command.layer)} обновлена."
-                        )
-                    )
-                } catch (error: Exception) {
-                    appEventSink.emit(AppEvent.RequestFailed(error.message))
-                }
+                runCatching { state.agent.editMemoryNote(command.layer, command.id, command.edit) }
+                    .onSuccess { result ->
+                        appEventSink.emit(AppEvent.CommandCompleted("Заметка ${result.note.id} в слое ${layerLabel(command.layer)} обновлена."))
+                    }
+                    .onFailure { appEventSink.emit(AppEvent.RequestFailed(it.message)) }
                 CliSessionControllerResult.Continue
             }
 
             is CliCommand.DeleteMemoryNote -> {
-                try {
-                    val result = state.agent.deleteMemoryNote(command.layer, command.id)
-                    appEventSink.emit(
-                        AppEvent.CommandCompleted(
-                            "Заметка ${result.note.id} удалена из слоя ${layerLabel(command.layer)}."
-                        )
+                runCatching { state.agent.deleteMemoryNote(command.layer, command.id) }
+                    .onSuccess { result ->
+                        appEventSink.emit(AppEvent.CommandCompleted("Заметка ${result.note.id} удалена из слоя ${layerLabel(command.layer)}."))
+                    }
+                    .onFailure { appEventSink.emit(AppEvent.RequestFailed(it.message)) }
+                CliSessionControllerResult.Continue
+            }
+
+            CliCommand.ShowUsers -> {
+                appEventSink.emit(
+                    AppEvent.UsersAvailable(
+                        users = state.agent.users(),
+                        activeUserId = state.agent.activeUser().id
                     )
-                } catch (error: Exception) {
-                    appEventSink.emit(AppEvent.RequestFailed(error.message))
-                }
+                )
+                CliSessionControllerResult.Continue
+            }
+
+            CliCommand.ShowActiveUser -> {
+                val activeUser = state.agent.activeUser()
+                appEventSink.emit(AppEvent.CommandCompleted("Активный пользователь: ${activeUser.displayName} (${activeUser.id})."))
+                CliSessionControllerResult.Continue
+            }
+
+            is CliCommand.CreateUser -> {
+                runCatching { state.agent.createUser(command.id, command.displayName) }
+                    .onSuccess { user ->
+                        appEventSink.emit(AppEvent.CommandCompleted("Пользователь ${user.displayName} (${user.id}) создан."))
+                    }
+                    .onFailure { appEventSink.emit(AppEvent.RequestFailed(it.message)) }
+                CliSessionControllerResult.Continue
+            }
+
+            is CliCommand.SwitchUser -> {
+                runCatching { state.agent.switchUser(command.id) }
+                    .onSuccess { user ->
+                        appEventSink.emit(AppEvent.CommandCompleted("Активный пользователь переключён на ${user.displayName} (${user.id})."))
+                    }
+                    .onFailure { appEventSink.emit(AppEvent.RequestFailed(it.message)) }
+                CliSessionControllerResult.Continue
+            }
+
+            CliCommand.ShowProfile -> {
+                appEventSink.emit(
+                    AppEvent.UserProfileAvailable(
+                        user = state.agent.activeUser(),
+                        notes = state.agent.inspectProfile()
+                    )
+                )
+                CliSessionControllerResult.Continue
+            }
+
+            CliCommand.StartProfileNoteDraft -> {
+                noteDraft = MemoryNoteDraft.Profile()
+                appEventSink.emit(
+                    AppEvent.CommandCompleted(
+                        "Пошаговое добавление профильной заметки запущено для пользователя ${state.agent.activeUser().displayName}.\nВведи категорию из списка:\n${formattedCategoryList(MemoryLayer.LONG_TERM)}\nДля отмены введи ${CliCommands.CANCEL}."
+                    )
+                )
+                CliSessionControllerResult.Continue
+            }
+
+            is CliCommand.AddProfileNote -> {
+                runCatching { state.agent.addProfileNote(command.category, command.content) }
+                    .onSuccess { result ->
+                        appEventSink.emit(AppEvent.CommandCompleted("Профильная заметка ${result.note.id} добавлена."))
+                    }
+                    .onFailure { appEventSink.emit(AppEvent.RequestFailed(it.message)) }
+                CliSessionControllerResult.Continue
+            }
+
+            is CliCommand.EditProfileNote -> {
+                runCatching { state.agent.editProfileNote(command.id, command.edit) }
+                    .onSuccess { result ->
+                        appEventSink.emit(AppEvent.CommandCompleted("Профильная заметка ${result.note.id} обновлена."))
+                    }
+                    .onFailure { appEventSink.emit(AppEvent.RequestFailed(it.message)) }
+                CliSessionControllerResult.Continue
+            }
+
+            is CliCommand.DeleteProfileNote -> {
+                runCatching { state.agent.deleteProfileNote(command.id) }
+                    .onSuccess { result ->
+                        appEventSink.emit(AppEvent.CommandCompleted("Профильная заметка ${result.note.id} удалена."))
+                    }
+                    .onFailure { appEventSink.emit(AppEvent.RequestFailed(it.message)) }
                 CliSessionControllerResult.Continue
             }
 
@@ -226,11 +307,7 @@ class CliSessionController(
                 try {
                     val branchingCapability = state.agent.capability<BranchingCapability>()
                         ?: error("Команды ветвления доступны только для стратегии Branching.")
-                    appEventSink.emit(
-                        AppEvent.CheckpointCreated(
-                            branchingCapability.createCheckpoint(command.name)
-                        )
-                    )
+                    appEventSink.emit(AppEvent.CheckpointCreated(branchingCapability.createCheckpoint(command.name)))
                 } catch (error: Exception) {
                     appEventSink.emit(AppEvent.RequestFailed(error.message))
                 }
@@ -304,25 +381,17 @@ class CliSessionController(
                 } catch (error: Exception) {
                     appEventSink.emit(AppEvent.RequestFailed(error.message))
                 }
-
                 CliSessionControllerResult.Continue
             }
         }
+    }
 
     private fun switchModel(requestedModelId: String) {
         try {
-            val languageModel = createLanguageModel(
-                requestedModelId,
-                config,
-                httpClient
-            )
+            val languageModel = createLanguageModel(requestedModelId, config, httpClient)
             warmUpLanguageModel(languageModel, lifecycleListener)
             val selectedStrategy = selectMemoryStrategy()
-            val agent = createAgent(
-                languageModel,
-                lifecycleListener,
-                selectedStrategy.type
-            )
+            val agent = createAgent(languageModel, lifecycleListener, selectedStrategy.type)
             state = state.copy(
                 modelId = requestedModelId,
                 languageModel = languageModel,
@@ -349,11 +418,176 @@ class CliSessionController(
             else -> error("Поддерживаются только поля text, layer и category.")
         }
 
+    private fun handleDraftInput(
+        draft: MemoryNoteDraft,
+        input: String
+    ): CliSessionControllerResult {
+        val normalizedInput = input.trim()
+        if (normalizedInput.equals(CliCommands.CANCEL, ignoreCase = true) || normalizedInput.equals("cancel", ignoreCase = true)) {
+            noteDraft = null
+            appEventSink.emit(AppEvent.CommandCompleted("Пошаговое добавление заметки отменено."))
+            return CliSessionControllerResult.Continue
+        }
+        if (normalizedInput.startsWith(CliCommands.PREFIX)) {
+            appEventSink.emit(
+                AppEvent.RequestFailed(
+                    "Сейчас активно пошаговое добавление заметки. Заверши его или отмени командой ${CliCommands.CANCEL}."
+                )
+            )
+            return CliSessionControllerResult.Continue
+        }
+
+        return when (draft) {
+            is MemoryNoteDraft.Memory -> handleMemoryDraftInput(draft, normalizedInput)
+            is MemoryNoteDraft.Profile -> handleProfileDraftInput(draft, normalizedInput)
+        }
+    }
+
+    private fun handleMemoryDraftInput(
+        draft: MemoryNoteDraft.Memory,
+        input: String
+    ): CliSessionControllerResult {
+        if (draft.layer == null) {
+            return runCatching { parseEditableLayer(input) }
+                .onSuccess { layer ->
+                    noteDraft = draft.copy(layer = layer)
+                    appEventSink.emit(
+                        AppEvent.CommandCompleted(
+                            "Слой выбран: ${layerCommandValue(layer)}.\nВведи категорию из списка:\n${formattedCategoryList(layer)}"
+                        )
+                    )
+                }
+                .onFailure {
+                    appEventSink.emit(AppEvent.RequestFailed("Нужно выбрать слой working или long. Для отмены введи ${CliCommands.CANCEL}."))
+                }
+                .let { CliSessionControllerResult.Continue }
+        }
+
+        if (draft.category == null) {
+            val category = input.trim()
+            val allowedCategories = state.agent.memoryCategories(draft.layer)
+            return if (allowedCategories.contains(category)) {
+                noteDraft = draft.copy(category = category)
+                appEventSink.emit(AppEvent.CommandCompleted("Категория выбрана: $category. Теперь введи текст заметки."))
+                CliSessionControllerResult.Continue
+            } else {
+                appEventSink.emit(
+                    AppEvent.RequestFailed(
+                        "Категория '$category' недоступна для слоя ${layerCommandValue(draft.layer)}.\nДоступные категории:\n${formattedCategoryList(draft.layer)}"
+                    )
+                )
+                CliSessionControllerResult.Continue
+            }
+        }
+
+        if (draft.content == null) {
+            if (input.isBlank()) {
+                appEventSink.emit(AppEvent.RequestFailed("Текст заметки не должен быть пустым."))
+                return CliSessionControllerResult.Continue
+            }
+            noteDraft = draft.copy(content = input)
+            appEventSink.emit(
+                AppEvent.CommandCompleted(
+                    "Черновик заметки готов.\nСлой: ${layerCommandValue(draft.layer)}\nКатегория: ${draft.category}\nТекст: $input\nВведи confirm для сохранения или ${CliCommands.CANCEL} для отмены."
+                )
+            )
+            return CliSessionControllerResult.Continue
+        }
+
+        return handleMemoryDraftConfirmation(draft, input)
+    }
+
+    private fun handleProfileDraftInput(
+        draft: MemoryNoteDraft.Profile,
+        input: String
+    ): CliSessionControllerResult {
+        if (draft.category == null) {
+            val category = input.trim()
+            val allowedCategories = state.agent.memoryCategories(MemoryLayer.LONG_TERM)
+            return if (allowedCategories.contains(category)) {
+                noteDraft = draft.copy(category = category)
+                appEventSink.emit(AppEvent.CommandCompleted("Категория выбрана: $category. Теперь введи текст профильной заметки."))
+                CliSessionControllerResult.Continue
+            } else {
+                appEventSink.emit(
+                    AppEvent.RequestFailed(
+                        "Категория '$category' недоступна для профиля.\nДоступные категории:\n${formattedCategoryList(MemoryLayer.LONG_TERM)}"
+                    )
+                )
+                CliSessionControllerResult.Continue
+            }
+        }
+
+        if (draft.content == null) {
+            if (input.isBlank()) {
+                appEventSink.emit(AppEvent.RequestFailed("Текст заметки не должен быть пустым."))
+                return CliSessionControllerResult.Continue
+            }
+            noteDraft = draft.copy(content = input)
+            val activeUser = state.agent.activeUser()
+            appEventSink.emit(
+                AppEvent.CommandCompleted(
+                    "Черновик профильной заметки готов.\nПользователь: ${activeUser.displayName} (${activeUser.id})\nКатегория: ${draft.category}\nТекст: $input\nВведи confirm для сохранения или ${CliCommands.CANCEL} для отмены."
+                )
+            )
+            return CliSessionControllerResult.Continue
+        }
+
+        return handleProfileDraftConfirmation(draft, input)
+    }
+
+    private fun handleMemoryDraftConfirmation(
+        draft: MemoryNoteDraft.Memory,
+        input: String
+    ): CliSessionControllerResult {
+        if (!input.equals("confirm", ignoreCase = true)) {
+            appEventSink.emit(AppEvent.RequestFailed("Для сохранения введи confirm или ${CliCommands.CANCEL} для отмены."))
+            return CliSessionControllerResult.Continue
+        }
+
+        runCatching { state.agent.addMemoryNote(draft.layer!!, draft.category!!, draft.content!!) }
+            .onSuccess { result ->
+                noteDraft = null
+                appEventSink.emit(AppEvent.CommandCompleted("Добавлена заметка ${result.note.id} в слой ${layerLabel(draft.layer!!)}."))
+            }
+            .onFailure { appEventSink.emit(AppEvent.RequestFailed(it.message)) }
+        return CliSessionControllerResult.Continue
+    }
+
+    private fun handleProfileDraftConfirmation(
+        draft: MemoryNoteDraft.Profile,
+        input: String
+    ): CliSessionControllerResult {
+        if (!input.equals("confirm", ignoreCase = true)) {
+            appEventSink.emit(AppEvent.RequestFailed("Для сохранения введи confirm или ${CliCommands.CANCEL} для отмены."))
+            return CliSessionControllerResult.Continue
+        }
+
+        runCatching { state.agent.addProfileNote(draft.category!!, draft.content!!) }
+            .onSuccess { result ->
+                noteDraft = null
+                appEventSink.emit(AppEvent.CommandCompleted("Профильная заметка ${result.note.id} добавлена."))
+            }
+            .onFailure { appEventSink.emit(AppEvent.RequestFailed(it.message)) }
+        return CliSessionControllerResult.Continue
+    }
+
     private fun parseEditableLayer(value: String): MemoryLayer =
         when (value.trim().lowercase()) {
             "working", "work", "рабочая" -> MemoryLayer.WORKING
             "long", "long-term", "долговременная" -> MemoryLayer.LONG_TERM
             else -> error("Для pending-кандидата поддерживаются только слои working и long.")
+        }
+
+    /**
+     * Формирует многострочный список допустимых категорий слоя с краткими описаниями.
+     *
+     * @param layer слой памяти, для которого нужно показать доступные категории.
+     * @return строки списка в формате `- id: description`.
+     */
+    private fun formattedCategoryList(layer: MemoryLayer): String =
+        MemoryLayerCategories.definitionsFor(layer).joinToString(separator = "\n") { definition ->
+            "- ${definition.id}: ${definition.description}"
         }
 
     private fun memoryCategoryGroups(layer: MemoryLayer?): List<HelpCommandGroup> {
@@ -398,13 +632,19 @@ class CliSessionController(
  * Результат обработки одного шага CLI-сессии.
  */
 sealed interface CliSessionControllerResult {
-    /**
-     * Сессия продолжается, можно читать следующий ввод.
-     */
     data object Continue : CliSessionControllerResult
-
-    /**
-     * Пользователь завершил работу сессии.
-     */
     data object ExitRequested : CliSessionControllerResult
+}
+
+private sealed interface MemoryNoteDraft {
+    data class Memory(
+        val layer: MemoryLayer? = null,
+        val category: String? = null,
+        val content: String? = null
+    ) : MemoryNoteDraft
+
+    data class Profile(
+        val category: String? = null,
+        val content: String? = null
+    ) : MemoryNoteDraft
 }

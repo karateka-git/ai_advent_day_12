@@ -5,10 +5,12 @@ import agent.format.ResponseFormat
 import agent.memory.model.ManagedMemoryNoteEdit
 import agent.memory.model.ManagedMemoryNoteResult
 import agent.memory.model.MemoryLayer
+import agent.memory.model.MemoryNote
 import agent.memory.model.MemorySnapshot
 import agent.memory.model.PendingMemoryState
 import agent.memory.model.PendingMemoryActionResult
 import agent.memory.model.PendingMemoryEdit
+import agent.memory.model.UserAccount
 import java.nio.file.Path
 
 /**
@@ -55,6 +57,16 @@ interface Agent<T> {
      */
     fun inspectMemory(): MemorySnapshot
 
+    fun users(): List<UserAccount>
+
+    fun activeUser(): UserAccount
+
+    fun createUser(userId: String, displayName: String? = null): UserAccount
+
+    fun switchUser(userId: String): UserAccount
+
+    fun inspectProfile(): List<MemoryNote>
+
     /**
      * Возвращает текущие pending-кандидаты на сохранение в durable memory.
      */
@@ -94,6 +106,12 @@ interface Agent<T> {
      * Удаляет заметку из выбранного durable memory слоя.
      */
     fun deleteMemoryNote(layer: MemoryLayer, noteId: String): ManagedMemoryNoteResult
+
+    fun addProfileNote(category: String, content: String): ManagedMemoryNoteResult
+
+    fun editProfileNote(noteId: String, edit: ManagedMemoryNoteEdit): ManagedMemoryNoteResult
+
+    fun deleteProfileNote(noteId: String): ManagedMemoryNoteResult
 
     /**
      * Возвращает дополнительную capability текущего агента, если она поддерживается.

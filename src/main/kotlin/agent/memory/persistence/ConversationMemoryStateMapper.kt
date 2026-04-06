@@ -3,10 +3,12 @@ package agent.memory.persistence
 import agent.memory.model.LongTermMemory
 import agent.memory.model.MemoryLayer
 import agent.memory.model.MemoryNote
+import agent.memory.model.MemoryOwnerType
 import agent.memory.model.MemoryState
 import agent.memory.model.PendingMemoryCandidate
 import agent.memory.model.PendingMemoryState
 import agent.memory.model.ShortTermMemory
+import agent.memory.model.UserAccount
 import agent.memory.model.WorkingMemory
 import agent.storage.mapper.ChatMessageConversationMapper
 import agent.storage.model.ConversationMemoryState
@@ -15,6 +17,7 @@ import agent.storage.model.StoredMemoryNote
 import agent.storage.model.StoredPendingMemoryCandidate
 import agent.storage.model.StoredPendingMemoryState
 import agent.storage.model.StoredShortTermMemory
+import agent.storage.model.StoredUserAccount
 import agent.storage.model.StoredWorkingMemory
 import llm.core.model.ChatRole
 
@@ -41,6 +44,8 @@ class ConversationMemoryStateMapper(
             longTerm = LongTermMemory(
                 notes = storedState.longTerm.notes.map(::toRuntimeNote)
             ),
+            users = storedState.users.map(::toRuntimeUser),
+            activeUserId = storedState.activeUserId,
             pending = PendingMemoryState(
                 candidates = storedState.pending.candidates.map(::toRuntimeCandidate),
                 nextId = storedState.pending.nextId
@@ -64,6 +69,8 @@ class ConversationMemoryStateMapper(
             longTerm = StoredLongTermMemory(
                 notes = runtimeState.longTerm.notes.map(::toStoredNote)
             ),
+            users = runtimeState.users.map(::toStoredUser),
+            activeUserId = runtimeState.activeUserId,
             pending = StoredPendingMemoryState(
                 candidates = runtimeState.pending.candidates.map(::toStoredCandidate),
                 nextId = runtimeState.pending.nextId
@@ -75,14 +82,30 @@ class ConversationMemoryStateMapper(
         MemoryNote(
             id = note.id,
             category = note.category,
-            content = note.content
+            content = note.content,
+            ownerType = MemoryOwnerType.valueOf(note.ownerType),
+            ownerId = note.ownerId
         )
 
     private fun toStoredNote(note: MemoryNote): StoredMemoryNote =
         StoredMemoryNote(
             id = note.id,
             category = note.category,
-            content = note.content
+            content = note.content,
+            ownerType = note.ownerType.name,
+            ownerId = note.ownerId
+        )
+
+    private fun toRuntimeUser(user: StoredUserAccount): UserAccount =
+        UserAccount(
+            id = user.id,
+            displayName = user.displayName
+        )
+
+    private fun toStoredUser(user: UserAccount): StoredUserAccount =
+        StoredUserAccount(
+            id = user.id,
+            displayName = user.displayName
         )
 
     private fun toRuntimeCandidate(candidate: StoredPendingMemoryCandidate): PendingMemoryCandidate =
@@ -91,6 +114,8 @@ class ConversationMemoryStateMapper(
             targetLayer = MemoryLayer.valueOf(candidate.targetLayer),
             category = candidate.category,
             content = candidate.content,
+            ownerType = MemoryOwnerType.valueOf(candidate.ownerType),
+            ownerId = candidate.ownerId,
             sourceRole = ChatRole.valueOf(candidate.sourceRole),
             sourceMessage = candidate.sourceMessage
         )
@@ -101,6 +126,8 @@ class ConversationMemoryStateMapper(
             targetLayer = candidate.targetLayer.name,
             category = candidate.category,
             content = candidate.content,
+            ownerType = candidate.ownerType.name,
+            ownerId = candidate.ownerId,
             sourceRole = candidate.sourceRole.name,
             sourceMessage = candidate.sourceMessage
         )

@@ -17,11 +17,11 @@ import agent.memory.model.PendingMemoryActionResult
 import agent.memory.model.PendingMemoryCandidate
 import agent.memory.model.PendingMemoryEdit
 import agent.memory.model.PendingMemoryState
+import agent.memory.model.UserAccount
 import agent.memory.strategy.MemoryStrategyOption
 import agent.memory.strategy.MemoryStrategyType
 import app.output.AppEvent
 import app.output.AppEventSink
-import app.output.HelpCommandGroup
 import java.net.http.HttpClient
 import java.nio.file.Path
 import java.util.Properties
@@ -68,18 +68,18 @@ class CliSessionControllerTest {
     }
 
     @Test
-    fun `shows memory through current agent`() {
+    fun `shows users and active profile`() {
         val sink = RecordingAppEventSink()
         val controller = createController(sink = sink)
 
-        val result = controller.handle("/memory long")
+        val result = controller.handle("/users")
 
         assertEquals(CliSessionControllerResult.Continue, result)
         assertEquals(
             listOf<AppEvent>(
-                AppEvent.MemoryStateAvailable(
-                    snapshot = FakeAgent.memorySnapshot(),
-                    selectedLayer = MemoryLayer.LONG_TERM
+                AppEvent.UsersAvailable(
+                    users = listOf(UserAccount("default", "Default")),
+                    activeUserId = "default"
                 )
             ),
             sink.events
@@ -87,35 +87,24 @@ class CliSessionControllerTest {
     }
 
     @Test
-    fun `shows pending candidates through current agent`() {
+    fun `shows active user profile`() {
         val sink = RecordingAppEventSink()
         val controller = createController(sink = sink)
 
-        val result = controller.handle("/memory pending")
+        val result = controller.handle("/profile")
 
         assertEquals(CliSessionControllerResult.Continue, result)
         assertEquals(
             listOf<AppEvent>(
-                AppEvent.PendingMemoryAvailable(
-                    pending = FakeAgent.pendingMemory()
-                )
-            ),
-            sink.events
-        )
-    }
-
-    @Test
-    fun `shows pending commands help`() {
-        val sink = RecordingAppEventSink()
-        val controller = createController(sink = sink)
-
-        val result = controller.handle("/memory pending info")
-
-        assertEquals(CliSessionControllerResult.Continue, result)
-        assertEquals(
-            listOf<AppEvent>(
-                AppEvent.PendingMemoryCommandsAvailable(
-                    commands = PendingMemoryCliCatalog.helpCommands
+                AppEvent.UserProfileAvailable(
+                    user = UserAccount("default", "Default"),
+                    notes = listOf(
+                        MemoryNote(
+                            id = "n-profile",
+                            category = "communication_style",
+                            content = "Отвечай кратко"
+                        )
+                    )
                 )
             ),
             sink.events
@@ -133,6 +122,90 @@ class CliSessionControllerTest {
         assertEquals(
             listOf<AppEvent>(
                 AppEvent.CommandCompleted("Добавлена заметка n1 в слой рабочая память.")
+            ),
+            sink.events
+        )
+    }
+
+    @Test
+    fun `starts step by step memory note creation`() {
+        val sink = RecordingAppEventSink()
+        val agent = FakeAgent()
+        val controller = createController(
+            sink = sink,
+            initialState = initialState(agent = agent)
+        )
+
+        controller.handle("/memory add")
+        controller.handle("working")
+        controller.handle("goal")
+        controller.handle("Собрать ТЗ")
+        val result = controller.handle("confirm")
+
+        assertEquals(CliSessionControllerResult.Continue, result)
+        assertEquals(
+            listOf(
+                Triple(MemoryLayer.WORKING, "goal", "Собрать ТЗ")
+            ),
+            agent.addedMemoryNotes
+        )
+        assertEquals(
+            listOf<AppEvent>(
+                AppEvent.CommandCompleted("Пошаговое добавление заметки запущено. Выбери слой: working или long. Для отмены введи /cancel."),
+                AppEvent.CommandCompleted(
+                    "Слой выбран: working.\n" +
+                        "Введи категорию из списка:\n" +
+                        "- goal: цель или ожидаемый результат текущей задачи\n" +
+                        "- constraint: ограничение, требование или запрет для текущей задачи\n" +
+                        "- deadline: срок, дата или временное ограничение текущей задачи\n" +
+                        "- budget: бюджет или лимит ресурсов\n" +
+                        "- integration: внешняя система, сервис или интеграция, нужная для задачи\n" +
+                        "- decision: текущее принятое решение по задаче\n" +
+                        "- open_question: открытый вопрос или нерешённая часть текущей задачи"
+                ),
+                AppEvent.CommandCompleted("Категория выбрана: goal. Теперь введи текст заметки."),
+                AppEvent.CommandCompleted("Черновик заметки готов.\nСлой: working\nКатегория: goal\nТекст: Собрать ТЗ\nВведи confirm для сохранения или /cancel для отмены."),
+                AppEvent.CommandCompleted("Добавлена заметка n1 в слой рабочая память.")
+            ),
+            sink.events
+        )
+    }
+
+    @Test
+    fun `starts step by step profile note creation`() {
+        val sink = RecordingAppEventSink()
+        val agent = FakeAgent()
+        val controller = createController(
+            sink = sink,
+            initialState = initialState(agent = agent)
+        )
+
+        controller.handle("/profile add")
+        controller.handle("communication_style")
+        controller.handle("Отвечай кратко")
+        val result = controller.handle("confirm")
+
+        assertEquals(CliSessionControllerResult.Continue, result)
+        assertEquals(
+            listOf(
+                "communication_style" to "Отвечай кратко"
+            ),
+            agent.addedProfileNotes
+        )
+        assertEquals(
+            listOf<AppEvent>(
+                AppEvent.CommandCompleted(
+                    "Пошаговое добавление профильной заметки запущено для пользователя Default.\n" +
+                        "Введи категорию из списка:\n" +
+                        "- communication_style: устойчивое предпочтение по стилю общения\n" +
+                        "- persistent_preference: постоянное пользовательское предпочтение\n" +
+                        "- architectural_agreement: устойчивая архитектурная договорённость\n" +
+                        "- reusable_knowledge: повторно полезное знание о пользователе или проекте\n" +
+                        "Для отмены введи /cancel."
+                ),
+                AppEvent.CommandCompleted("Категория выбрана: communication_style. Теперь введи текст профильной заметки."),
+                AppEvent.CommandCompleted("Черновик профильной заметки готов.\nПользователь: Default (default)\nКатегория: communication_style\nТекст: Отвечай кратко\nВведи confirm для сохранения или /cancel для отмены."),
+                AppEvent.CommandCompleted("Профильная заметка n-profile добавлена.")
             ),
             sink.events
         )
@@ -231,6 +304,8 @@ private class FakeAgent(
     private val pendingStateAfterAsk: PendingMemoryState = initialPendingState
 ) : Agent<String> {
     private var currentPendingState: PendingMemoryState = initialPendingState
+    val addedMemoryNotes = mutableListOf<Triple<MemoryLayer, String, String>>()
+    val addedProfileNotes = mutableListOf<Pair<String, String>>()
 
     override val info: AgentInfo = AgentInfo(
         name = "TestAgent",
@@ -251,6 +326,19 @@ private class FakeAgent(
     override fun replaceContextFromFile(sourcePath: Path) = Unit
 
     override fun inspectMemory(): MemorySnapshot = memorySnapshot()
+
+    override fun users(): List<UserAccount> = listOf(UserAccount("default", "Default"))
+
+    override fun activeUser(): UserAccount = UserAccount("default", "Default")
+
+    override fun createUser(userId: String, displayName: String?): UserAccount =
+        UserAccount(userId, displayName ?: userId)
+
+    override fun switchUser(userId: String): UserAccount =
+        UserAccount(userId, userId)
+
+    override fun inspectProfile(): List<MemoryNote> =
+        listOf(MemoryNote(id = "n-profile", category = "communication_style", content = "Отвечай кратко"))
 
     override fun inspectPendingMemory(): PendingMemoryState = currentPendingState
 
@@ -280,7 +368,9 @@ private class FakeAgent(
         ManagedMemoryNoteResult(
             note = MemoryNote(id = "n1", category = category, content = content),
             state = memorySnapshot().state
-        )
+        ).also {
+            addedMemoryNotes += Triple(layer, category, content)
+        }
 
     override fun editMemoryNote(layer: MemoryLayer, noteId: String, edit: ManagedMemoryNoteEdit): ManagedMemoryNoteResult =
         ManagedMemoryNoteResult(
@@ -291,6 +381,26 @@ private class FakeAgent(
     override fun deleteMemoryNote(layer: MemoryLayer, noteId: String): ManagedMemoryNoteResult =
         ManagedMemoryNoteResult(
             note = MemoryNote(id = noteId, category = "goal", content = "Удалённая заметка"),
+            state = memorySnapshot().state
+        )
+
+    override fun addProfileNote(category: String, content: String): ManagedMemoryNoteResult =
+        ManagedMemoryNoteResult(
+            note = MemoryNote(id = "n-profile", category = category, content = content),
+            state = memorySnapshot().state
+        ).also {
+            addedProfileNotes += category to content
+        }
+
+    override fun editProfileNote(noteId: String, edit: ManagedMemoryNoteEdit): ManagedMemoryNoteResult =
+        ManagedMemoryNoteResult(
+            note = MemoryNote(id = noteId, category = "communication_style", content = "Обновлённый профиль"),
+            state = memorySnapshot().state
+        )
+
+    override fun deleteProfileNote(noteId: String): ManagedMemoryNoteResult =
+        ManagedMemoryNoteResult(
+            note = MemoryNote(id = noteId, category = "communication_style", content = "Удалённый профиль"),
             state = memorySnapshot().state
         )
 

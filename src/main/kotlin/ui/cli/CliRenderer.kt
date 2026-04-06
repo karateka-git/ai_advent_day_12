@@ -2,6 +2,7 @@ package ui.cli
 
 import agent.memory.model.MemoryLayer
 import agent.memory.model.MemoryNote
+import agent.memory.model.MemoryOwnerType
 import agent.memory.model.MemorySnapshot
 import agent.memory.model.PendingMemoryState
 import agent.memory.strategy.MemoryStrategyOption
@@ -98,6 +99,31 @@ class CliRenderer(
             }
 
             is AppEvent.MemoryStateAvailable -> renderMemoryState(event.snapshot, event.selectedLayer)
+
+            is AppEvent.UsersAvailable -> {
+                renderBorderedBlock(
+                    title = "Пользователи",
+                    lines = event.users.map { user ->
+                        val marker = if (user.id == event.activeUserId) "*" else " "
+                        "$marker ${user.id} (${user.displayName})"
+                    }
+                )
+            }
+
+            is AppEvent.UserProfileAvailable -> {
+                val lines = buildList {
+                    add("Активный пользователь: ${event.user.displayName} (${event.user.id})")
+                    if (event.notes.isEmpty()) {
+                        add("(пусто)")
+                    } else {
+                        event.notes.forEach { add(formatManagedNote(it)) }
+                    }
+                }
+                renderBorderedBlock(
+                    title = "Профиль пользователя",
+                    lines = lines
+                )
+            }
 
             is AppEvent.PendingMemoryAvailable -> {
                 if (event.reason != null) {
@@ -334,7 +360,19 @@ class CliRenderer(
     }
 
     private fun formatManagedNote(note: MemoryNote): String =
-        "${note.id} [${noteCategoryTitle(note.category)}]: ${note.content}"
+        buildString {
+            append(note.id)
+            append(" [")
+            append(noteCategoryTitle(note.category))
+            append("]")
+            if (note.ownerType == MemoryOwnerType.USER && note.ownerId != null) {
+                append(" [user:")
+                append(note.ownerId)
+                append("]")
+            }
+            append(": ")
+            append(note.content)
+        }
 
     private fun formatMessageLine(message: ChatMessage): String =
         buildString {

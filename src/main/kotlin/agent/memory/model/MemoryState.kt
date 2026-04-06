@@ -11,6 +11,16 @@ enum class MemoryLayer {
     LONG_TERM
 }
 
+enum class MemoryOwnerType {
+    GLOBAL,
+    USER
+}
+
+data class UserAccount(
+    val id: String,
+    val displayName: String
+)
+
 /**
  * Краткая единица явно сохранённой рабочей или долговременной памяти.
  *
@@ -21,12 +31,16 @@ enum class MemoryLayer {
 data class MemoryNote(
     val id: String,
     val category: String,
-    val content: String
+    val content: String,
+    val ownerType: MemoryOwnerType = MemoryOwnerType.GLOBAL,
+    val ownerId: String? = null
 ) {
     constructor(category: String, content: String) : this(
         id = "",
         category = category,
-        content = content
+        content = content,
+        ownerType = MemoryOwnerType.GLOBAL,
+        ownerId = null
     )
 }
 
@@ -63,6 +77,15 @@ data class MemoryState(
     val shortTerm: ShortTermMemory = ShortTermMemory(),
     val working: WorkingMemory = WorkingMemory(),
     val longTerm: LongTermMemory = LongTermMemory(),
+    val users: List<UserAccount> = listOf(UserAccount(id = DEFAULT_USER_ID, displayName = "Default")),
+    val activeUserId: String = DEFAULT_USER_ID,
     val pending: PendingMemoryState = PendingMemoryState(),
     val nextNoteId: Long = 1
-)
+) {
+    fun activeUser(): UserAccount =
+        users.firstOrNull { it.id == activeUserId } ?: users.first()
+
+    companion object {
+        const val DEFAULT_USER_ID = "default"
+    }
+}

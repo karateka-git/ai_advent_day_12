@@ -4,7 +4,7 @@ import app.output.HelpCommandDescriptor
 import app.output.HelpCommandGroup
 
 /**
- * Единый каталог основных CLI-команд приложения.
+ * Каталог основных CLI-команд приложения, используемый help-экраном.
  */
 object GeneralCliCatalog {
     val helpGroups: List<HelpCommandGroup> = listOf(
@@ -14,6 +14,11 @@ object GeneralCliCatalog {
                 HelpCommandDescriptor(CliCommands.HELP, "Показать общий список команд."),
                 HelpCommandDescriptor(CliCommands.MODELS, "Показать доступные модели."),
                 HelpCommandDescriptor("${CliCommands.USE} <model_id>", "Переключить модель и выбрать стратегию памяти."),
+                HelpCommandDescriptor(CliCommands.USERS, "Показать список пользователей и активный профиль."),
+                HelpCommandDescriptor(CliCommands.USER, "Показать активного пользователя."),
+                HelpCommandDescriptor("${CliCommands.USER} create <id> [display_name]", "Создать нового пользователя."),
+                HelpCommandDescriptor("${CliCommands.USER} use <id>", "Переключить активного пользователя."),
+                HelpCommandDescriptor(CliCommands.CANCEL, "Отменить активное пошаговое добавление заметки."),
                 HelpCommandDescriptor(CliCommands.CLEAR, "Очистить текущий контекст диалога."),
                 HelpCommandDescriptor(CliCommands.EXIT, "Завершить работу."),
                 HelpCommandDescriptor(CliCommands.QUIT, "Завершить работу.")
@@ -27,11 +32,17 @@ object GeneralCliCatalog {
                 HelpCommandDescriptor("${CliCommands.MEMORY} working", "Показать рабочую память."),
                 HelpCommandDescriptor("${CliCommands.MEMORY} long", "Показать долговременную память."),
                 HelpCommandDescriptor("${CliCommands.MEMORY} categories", "Показать доступные категории для ручной записи в память."),
+                HelpCommandDescriptor("${CliCommands.MEMORY} add", "Запустить пошаговое добавление записи в память."),
                 HelpCommandDescriptor("${CliCommands.MEMORY} add <working|long> <category> <текст>", "Добавить запись в рабочую или долговременную память."),
                 HelpCommandDescriptor("${CliCommands.MEMORY} note edit <working|long> <id> text|category <значение>", "Изменить сохранённую запись памяти."),
                 HelpCommandDescriptor("${CliCommands.MEMORY} note delete <working|long> <id>", "Удалить сохранённую запись памяти."),
                 HelpCommandDescriptor(PendingMemoryCliCatalog.SHOW, "Показать pending-кандидаты на сохранение."),
-                HelpCommandDescriptor(PendingMemoryCliCatalog.INFO, "Показать справку по командам для pending-памяти.")
+                HelpCommandDescriptor(PendingMemoryCliCatalog.INFO, "Показать справку по командам для pending-памяти."),
+                HelpCommandDescriptor(CliCommands.PROFILE, "Показать профиль активного пользователя."),
+                HelpCommandDescriptor("${CliCommands.PROFILE} add", "Запустить пошаговое добавление профильной заметки."),
+                HelpCommandDescriptor("${CliCommands.PROFILE} add <category> <текст>", "Добавить заметку в профиль активного пользователя."),
+                HelpCommandDescriptor("${CliCommands.PROFILE} note edit <id> text|category <значение>", "Изменить заметку профиля активного пользователя."),
+                HelpCommandDescriptor("${CliCommands.PROFILE} note delete <id>", "Удалить заметку профиля активного пользователя.")
             )
         ),
         HelpCommandGroup(

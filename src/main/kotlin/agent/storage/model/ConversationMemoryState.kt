@@ -11,6 +11,8 @@ data class ConversationMemoryState(
     val shortTerm: StoredShortTermMemory = StoredShortTermMemory(),
     val working: StoredWorkingMemory = StoredWorkingMemory(),
     val longTerm: StoredLongTermMemory = StoredLongTermMemory(),
+    val users: List<StoredUserAccount> = listOf(StoredUserAccount(id = "default", displayName = "Default")),
+    val activeUserId: String = "default",
     val pending: StoredPendingMemoryState = StoredPendingMemoryState(),
     val nextNoteId: Long = 1
 )
@@ -22,14 +24,24 @@ data class ConversationMemoryState(
 data class StoredMemoryNote(
     val id: String = "",
     val category: String,
-    val content: String
+    val content: String,
+    val ownerType: String = "GLOBAL",
+    val ownerId: String? = null
 ) {
     constructor(category: String, content: String) : this(
         id = "",
         category = category,
-        content = content
+        content = content,
+        ownerType = "GLOBAL",
+        ownerId = null
     )
 }
+
+@Serializable
+data class StoredUserAccount(
+    val id: String,
+    val displayName: String
+)
 
 /**
  * Persisted short-term слой.
@@ -75,6 +87,8 @@ data class StoredPendingMemoryCandidate(
     val targetLayer: String,
     val category: String,
     val content: String,
+    val ownerType: String = "GLOBAL",
+    val ownerId: String? = null,
     val sourceRole: String,
     val sourceMessage: String
 )
